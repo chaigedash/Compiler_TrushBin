@@ -41,6 +41,11 @@ public class Builder {
             new SdivInstruction(basicBlock, result, Value.Type._i32, operand1, operand2)
         );
     }
+    public void buildSremInstruction (BasicBlock basicBlock, Value result, Value operand1, Value operand2) {
+        basicBlock.addInstruct(
+                new SremInstruction(basicBlock, result, Value.Type._i32, operand1, operand2)
+        );
+    }
     public void buildAndInstruction (BasicBlock basicBlock, Value result, Value operand1, Value operand2) {
         basicBlock.addInstruct(
             new AndInstruction(basicBlock, result, Value.Type._i32, operand1, operand2)
@@ -56,10 +61,15 @@ public class Builder {
             new AllocaInstruction(basicBlock, memory, Value.Type._i32)
         );
     }
-    public void buildBrInstruction (BasicBlock basicBlock, Value result) {
-        basicBlock.addInstruct(
-                new BrInstruction(basicBlock)
-        );
+    public BrInstruction buildBrInstruction (BasicBlock basicBlock, Value cond) {
+        BrInstruction br = new BrInstruction(basicBlock, cond);
+        basicBlock.addInstruct(br);
+        return br;
+    }
+    public BrInstruction buildBrInstruction (BasicBlock basicBlock, BasicBlock destBlock) {
+        BrInstruction br = new BrInstruction(basicBlock, destBlock);
+        basicBlock.addInstruct(br);
+        return br;
     }
     public void buildCallInstruction (BasicBlock basicBlock, Value result, Function function, ArrayList<Value> params) {
         // 有参数，有返回
@@ -97,9 +107,9 @@ public class Builder {
                 new GetElementPtrInstruction(basicBlock)
         );
     }
-    public void buildIcmpInstruction (BasicBlock basicBlock, Value cond, Value operand1, Value operand2) {
+    public void buildIcmpInstruction (BasicBlock basicBlock, IcmpInstruction.IcmpType cond, Value res, Value operand1, Value operand2) {
         basicBlock.addInstruct(
-                new IcmpInstruction(basicBlock, cond, operand1, operand2)
+                new IcmpInstruction(basicBlock, cond, res, operand1, operand2)
         );
     }
     public void buildLoadInstruction (BasicBlock basicBlock, Value result, Pointer src) {
@@ -137,9 +147,9 @@ public class Builder {
                 new RetInstruction(basicBlock, retValue)
         );
     }
-    public void buildZextInstruction (BasicBlock basicBlock, Value type1, Value value, Value type2) {
+    public void buildZextInstruction (BasicBlock basicBlock, Value res, Value.Type fromType, Value value, Value.Type toType) {
         basicBlock.addInstruct(
-                new ZextInstruction(basicBlock, type1, value, type2)
+                new ZextInstruction(basicBlock, res, fromType, value, toType)
         );
     }
 }

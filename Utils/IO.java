@@ -83,9 +83,13 @@ public class IO {
 //        writeCore(str, "output.txt");
 //    }
     public void writeToLLVM(String str) {
+        if (Config.getInstance().llvmOUTPUTMODE)
+            System.out.print(str);
         writeCore(str, "llvm_ir.txt");
     }
     public void writelnToLLVM(String str) {
+        if (Config.getInstance().llvmOUTPUTMODE)
+            System.out.println(str);
         writeCore(str + '\n', "llvm_ir.txt");
     }
     public void writeln (int line, ErrorType type) {

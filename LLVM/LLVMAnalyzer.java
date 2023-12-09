@@ -1,5 +1,7 @@
 package LLVM;
 
+import LLVM.Instruction.BrInstruction;
+import LLVM.Instruction.IcmpInstruction;
 import SymbolTable_v2.*;
 import Lexer.LexType;
 import Lexer.Word;
@@ -7,6 +9,7 @@ import Parser.Node.*;
 import Parser.Node.Number;
 
 import java.util.ArrayList;
+import java.util.Objects;
 import java.util.Stack;
 
 public class LLVMAnalyzer {
@@ -21,6 +24,7 @@ public class LLVMAnalyzer {
         this.AST = AST;
     }
     public void analyzeAST () {
+        System.out.println("----------------start analyze: ir--------------");
         visitCompUnit(AST);
     }
     public void print() {
@@ -30,7 +34,6 @@ public class LLVMAnalyzer {
     private boolean isGlobalDecl;
     private boolean isConstExp;
     private boolean isWaitingForLVal;
-    private boolean isReturned;
     private Pointer lValPointer;
     private Stack<Integer> constValueStack = new Stack<Integer>(); // global和const的计算属性全都存这里
     private Stack<Value> valueStack = new Stack<Value>();
@@ -38,7 +41,13 @@ public class LLVMAnalyzer {
     private Function curFunction;
     private BasicBlock curBasicBlock;
     private Builder builder;
-    private boolean fuck;
+//    private Stack<BrInstruction> branches_lackFalseLabel = new Stack<BrInstruction>();
+//    private Stack<BrInstruction> branches_lackTrueLabel = new Stack<BrInstruction>();
+//    private Stack<BrInstruction> branches_ifBlock = new Stack<BrInstruction>();
+//    private Stack<BrInstruction> branches_elseBlock = new Stack<BrInstruction>();
+    private BrHandler curBrHandler = null;
+//    private BasicBlock thenBlock, nextBlock;
+
 //    private void gotoNewBasicBlock() {
 //        if (curBasicBlock != null)
 //            basicBlockStack.push(curBasicBlock);
@@ -48,6 +57,24 @@ public class LLVMAnalyzer {
 //        if (basicBlockStack.size() > 0)
 //            curBasicBlock = basicBlockStack.pop();
 //    }
+    private void newBrHandler (BrHandler.Type type) {
+        if (type == BrHandler.Type.ifBlock) {
+            curBrHandler = new ifBlockBrHandler(curBrHandler);
+        }
+        else {
+            curBrHandler = new forBlockBrHandler(curBrHandler);
+        }
+    }
+    private forBlockBrHandler findRecentForBrHandler() {
+        BrHandler bh = curBrHandler;
+        while (bh != null) {
+            if (bh instanceof forBlockBrHandler) {
+                return (forBlockBrHandler) bh;
+            }
+            bh = curBrHandler.preBrHandler;
+        }
+        return null;
+    }
     private ArrayList<Value> inverseList (ArrayList<Value> list) {
         for (int i = 0; i < list.size()/2; i++) {
             Value temp = list.get(i);
@@ -86,7 +113,7 @@ public class LLVMAnalyzer {
         isGlobalDecl = false;
         lValPointer = null;
         isWaitingForLVal = false;
-        isReturned = false;
+//        isReturned = false;
         builder = new Builder();
         curModule = Module.getInstance();
         curSymbolTable = new SymbolTable_v2();
@@ -156,7 +183,7 @@ public class LLVMAnalyzer {
         }
         else {
 //            builder.buildConstant(curBasicBlock, curFunction.giveName(), res);
-            Pointer mem = new Pointer(curFunction.giveName(), Value.Type._i32);
+            Pointer mem = new Pointer(curFunction.newIdent(), Value.Type._i32);
             builder.buildAllocaInstruction(curBasicBlock, mem);
             builder.buildStoreInstruction(curBasicBlock, new Constant(res), mem);
             symbol.value = res;
@@ -202,7 +229,7 @@ public class LLVMAnalyzer {
             }
         }
         else {
-            Pointer memory = new Pointer(curFunction.giveName(), Value.Type._i32);
+            Pointer memory = new Pointer(curFunction.newIdent(), Value.Type._i32);
             builder.buildAllocaInstruction(curBasicBlock, memory);
             symbol.setPointer(memory);
             Value init = null;
@@ -242,9 +269,9 @@ public class LLVMAnalyzer {
         if (funcFParams != null) {
             visitFuncFParams(funcFParams);
         }
-        curBasicBlock = builder.buildBasicBlock(curFunction, curFunction.giveName());
+        curBasicBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
         for (Argument arg : curFunction.arguments) {
-            Pointer memory = new Pointer(curFunction.giveName(), Value.Type._i32);
+            Pointer memory = new Pointer(curFunction.newIdent(), Value.Type._i32);
             builder.buildAllocaInstruction(curBasicBlock, memory);
             builder.buildStoreInstruction(curBasicBlock, arg, memory);
             for (Symbol_v2 param : temp_Params) {
@@ -262,26 +289,26 @@ public class LLVMAnalyzer {
 //        temp_Params = null;
 //        curSymbolTable = curSymbolTable.getPreTable();
         visitBlock(block);
-        if (!isReturned) {
-            builder.buildRetInstruction(curBasicBlock);
-        }
-        isReturned = false;
+//        if (!isReturned) {
+        if (returnType == Value.Type._i32) builder.buildRetInstruction(curBasicBlock, new Constant(0));
+        else builder.buildRetInstruction(curBasicBlock);
+//        }
+//        isReturned = false;
         curFunction = null;
     }
     private void visitMainFuncDef (MainFuncDef mainFuncDef) {
         Block block = mainFuncDef.getBlock();
         curFunction = builder.buildFunction(curModule, "main", Value.Type._i32);
-        String temp = curFunction.giveName();
-        curBasicBlock = builder.buildBasicBlock(curFunction, temp);
+        curBasicBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
 //        System.out.println("main basicBlock: " + temp);
         curSymbolTable.addSymbol(new Symbol_v2("main", Symbol_v2.Type.function, Value.Type._i32)); // 函数加进符号表
 //        curSymbolTable = curSymbolTable.createChildTable();
         visitBlock(block);
 //        curSymbolTable = curSymbolTable.getPreTable();
-        if (!isReturned) {
+//        if (!isReturned) {
             builder.buildRetInstruction(curBasicBlock);
-        }
-        isReturned = false;
+//        }
+//        isReturned = false;
     }
     private void visitFuncFParams (FuncFParams funcFParamList) {
         ArrayList<FuncFParam> funcFParams = funcFParamList.getFuncFParams();
@@ -306,7 +333,7 @@ public class LLVMAnalyzer {
         Symbol_v2 paramSymbol = new Symbol_v2(ident.word, Symbol_v2.Type.param);
 //        curSymbolTable.addSymbol(paramSymbol);
         temp_Params.add(paramSymbol);
-        String register = curFunction.giveName();
+        String register = curFunction.newIdent();
         builder.buildArgument(curFunction, register, type, ident.word);
 //        Pointer pointer = new Pointer(register, Value.Type._i32);
 //        paramSymbol.setPointer(pointer);
@@ -357,7 +384,7 @@ public class LLVMAnalyzer {
                 isWaitingForLVal = false;
                 visitExp(exp);
                 Value expResult = valueStack.pop();
-                // FIXME : 赋值没做，感觉还得看一遍指导书，应该还有落下的，但好困，晚安
+                // DONE : 赋值没做，感觉还得看一遍指导书，应该还有落下的，但好困，晚安
                 if (lValValue instanceof Global) {
                     builder.buildStoreInstruction(curBasicBlock, expResult, (Global)lValValue);
                 }
@@ -380,33 +407,144 @@ public class LLVMAnalyzer {
                 cond = stmt.getCond();
                 stmt1 = stmt.getStmt1();
                 stmt2 = stmt.getStmt2();
-                if (cond != null) {
-                    visitCond(cond);
+                BasicBlock ifBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
+                builder.buildBrInstruction(curBasicBlock, ifBlock);
+                curBasicBlock = ifBlock;
+//                System.out.println("if block : " + curBasicBlock.getIdent());
+                newBrHandler(BrHandler.Type.ifBlock);
+                visitCond(cond);
+                BrInstruction br = null;
+                while (((ifBlockBrHandler)curBrHandler).branches_ifBlock.size() != 0) {
+                    br = ((ifBlockBrHandler)curBrHandler).branches_ifBlock.pop();
+                    br.trueLabel = curBasicBlock;
                 }
-                if (stmt1 != null) {
-                    visitStmt(stmt1);
-                }
-                if (stmt2 != null) {
+                visitStmt(stmt1); // if block
+                if (stmt2 != null) { // else block
+                    BasicBlock elseBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
+                    BrInstruction bNext = builder.buildBrInstruction(curBasicBlock, null);
+                    while (((ifBlockBrHandler)curBrHandler).branches_elseBlock.size() != 0) {
+                        br = ((ifBlockBrHandler)curBrHandler).branches_elseBlock.pop();
+                        br.falseLabel = elseBlock;
+                    }
+                    curBasicBlock = elseBlock;
                     visitStmt(stmt2);
+                    BasicBlock nextBasicBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
+                    builder.buildBrInstruction(curBasicBlock, nextBasicBlock);
+                    bNext.trueLabel = nextBasicBlock;
+                    curBasicBlock = nextBasicBlock;
                 }
+                else {
+                    BasicBlock nextBasicBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
+                    builder.buildBrInstruction(curBasicBlock, nextBasicBlock);
+                    while (((ifBlockBrHandler)curBrHandler).branches_elseBlock.size() != 0) {
+                        br = ((ifBlockBrHandler)curBrHandler).branches_elseBlock.pop();
+                        br.falseLabel = nextBasicBlock;
+                    }
+                    curBasicBlock = nextBasicBlock;
+                }
+                curBrHandler = curBrHandler.preBrHandler;
                 break;
             case forStmt:
+//                System.out.println("for block : " + curBasicBlock.getIdent());
                 forStmt1 = stmt.getForStmt1();
                 cond = stmt.getCond();
                 forStmt2 = stmt.getForStmt2();
                 stmt1 = stmt.getStmt1();
-                if (forStmt1 != null)
+                BasicBlock condBlock = null, cycleBlock = null, thenBlock = null, nextBlock = null;
+                newBrHandler(BrHandler.Type.forBlock);
+                if (forStmt1 != null) {
                     visitForStmt(forStmt1);
-                if (cond != null)
+                }
+                if (cond != null) {
+                    condBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
+                    builder.buildBrInstruction(curBasicBlock, condBlock);
+                    curBasicBlock = condBlock;
+                    newBrHandler(BrHandler.Type.ifBlock);
                     visitCond(cond);
-                if (forStmt2 != null)
+                    cycleBlock = curBasicBlock;
+                    // curBasicBlock : cond_next = cycleBlock
+                    while (((ifBlockBrHandler)curBrHandler).branches_ifBlock.size() > 0) {
+                        BrInstruction br_for_if = ((ifBlockBrHandler)curBrHandler).branches_ifBlock.pop();
+                        br_for_if.trueLabel = curBasicBlock;
+                    }
+                    while (((ifBlockBrHandler)curBrHandler).branches_elseBlock.size() > 0) {
+                        forBlockBrHandler recentFor = findRecentForBrHandler();
+                        if (recentFor != null) {
+                            BrInstruction lackElse = ((ifBlockBrHandler)curBrHandler).branches_elseBlock.pop();
+                            recentFor.branches_nextBlock.push(lackElse);
+                        }
+                        else {
+                            System.out.println("error: no for block");
+                        }
+                    }
+                    curBrHandler = curBrHandler.preBrHandler;
+                }
+                else {
+                    cycleBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
+                    builder.buildBrInstruction(curBasicBlock, cycleBlock);
+                    curBasicBlock = cycleBlock; // curBasicBlock : cycleBlock
+                }
+                // in any case, curBasicBlock if cycleBlock
+                visitStmt(stmt1); // 会产生一系列continue和break
+//                DONE : cond --1-> stmt
+                if (forStmt2 != null) {
+                    thenBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
+                    builder.buildBrInstruction(curBasicBlock, thenBlock);
+                    curBasicBlock = thenBlock;
                     visitForStmt(forStmt2);
-                if (stmt1 != null)
-                    visitStmt(stmt1);
+                    if (condBlock != null) {
+                        builder.buildBrInstruction(curBasicBlock, condBlock);
+                    }
+                    else {
+                        builder.buildBrInstruction(curBasicBlock, cycleBlock);
+                    }
+                    while (((forBlockBrHandler)curBrHandler).branches_thenBlock.size() > 0) {
+                        BrInstruction t = ((forBlockBrHandler)curBrHandler).branches_thenBlock.pop();
+                        t.trueLabel = thenBlock;
+                    }
+//                    DONE : stmt -> forStmt2
+                }
+                else {
+                    builder.buildBrInstruction(curBasicBlock, condBlock);
+                    while (((forBlockBrHandler)curBrHandler).branches_thenBlock.size() > 0) {
+                        BrInstruction t = ((forBlockBrHandler)curBrHandler).branches_thenBlock.pop();
+                        if (condBlock != null) {
+                            t.trueLabel = condBlock;
+                        }
+                        else {
+                            t.trueLabel = cycleBlock;
+                        }
+                    }
+                }
+                nextBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
+//                System.out.println(nextBlock.getIdent() + "----->" + ((forBlockBrHandler)curBrHandler).branches_nextBlock.size());
+                while (((forBlockBrHandler)curBrHandler).branches_nextBlock.size() > 0) {
+                    BrInstruction br_for = ((forBlockBrHandler)curBrHandler).branches_nextBlock.pop();
+                    if (br_for.cond == null) {
+                        br_for.trueLabel = nextBlock;
+                    }
+                    else {
+                        br_for.falseLabel = nextBlock;
+                    }
+                }
+                builder.buildBrInstruction(curBasicBlock, nextBlock);
+                curBasicBlock = nextBlock;
+                System.out.println("condBlock = " + (condBlock != null ? condBlock.getIdent() : "<null>") + " thenBlock = " + (thenBlock != null ? thenBlock.getIdent() : "<null>") + " nextBlock = " + nextBlock.getIdent());
+                curBrHandler = curBrHandler.preBrHandler;
                 break;
             case breakStmt:
+                BrInstruction breakBr = builder.buildBrInstruction(curBasicBlock, null);
+                forBlockBrHandler recentFor_b = findRecentForBrHandler();
+                recentFor_b.branches_nextBlock.push(breakBr);
+//                if (curBasicBlock.getIdent().equals("%116")) {
+//                    System.out.println("hei");
+//                    System.out.println(recentFor_b.branches_nextBlock.size());
+//                }
                 break;
             case continueStmt:
+                BrInstruction continueBr = builder.buildBrInstruction(curBasicBlock, null);
+                forBlockBrHandler recentFor_c = findRecentForBrHandler();
+                recentFor_c.branches_thenBlock.push(continueBr);
                 break;
             case returnExp:
                 exp = stmt.getExp();
@@ -418,7 +556,7 @@ public class LLVMAnalyzer {
                 else {
                     builder.buildRetInstruction(curBasicBlock);
                 }
-                isReturned = true;
+//                isReturned = true;
                 break;
             case getint: // TODO : 感觉逻辑有问题
                 lVal = stmt.getlVal();
@@ -426,7 +564,7 @@ public class LLVMAnalyzer {
                 visitLVal(lVal);
                 Value lVal_getint = valueStack.pop();
                 isWaitingForLVal = false;
-                Value getintReturn = new Value(curFunction.giveName(), Value.Type._i32);
+                Value getintReturn = new Value(curFunction.newIdent(), Value.Type._i32);
                 Function function = curModule.getFunction("getint");
                 builder.buildCallInstruction(curBasicBlock, getintReturn, function);
                 if (lVal_getint instanceof Global) {
@@ -480,8 +618,19 @@ public class LLVMAnalyzer {
     private void visitForStmt (ForStmt forStmt) {
         LVal lVal = forStmt.getlVal();
         Exp exp = forStmt.getExp();
+        isWaitingForLVal = true;
         visitLVal(lVal);
+        Value lValValue = valueStack.pop();
+        isWaitingForLVal = false;
         visitExp(exp);
+        Value expResult = valueStack.pop();
+        if (lValValue instanceof Global) {
+            builder.buildStoreInstruction(curBasicBlock, expResult, (Global)lValValue);
+        }
+        else {
+            builder.buildStoreInstruction(curBasicBlock, expResult, lValPointer);
+            lValPointer = null; // 用完就扔！
+        }
     }
     private void visitExp (Exp exp) {
         AddExp addExp = exp.getAddExp();
@@ -505,7 +654,7 @@ public class LLVMAnalyzer {
                     constValueStack.push(globalLVal.value);
                 }
                 else {
-                    Value res = new Value(curFunction.giveName(), Value.Type._i32);
+                    Value res = new Value(curFunction.newIdent(), Value.Type._i32);
                     builder.buildLoadInstruction(curBasicBlock, res, globalLVal);
                     valueStack.push(res);
                     if (isWaitingForLVal){
@@ -528,7 +677,7 @@ public class LLVMAnalyzer {
                     if (isConstExp) {
                     }
                     else {
-                        Value res = new Value(curFunction.giveName(), Value.Type._i32);
+                        Value res = new Value(curFunction.newIdent(), Value.Type._i32);
                         builder.buildLoadInstruction(curBasicBlock, res, symbol.getPointer());
                         valueStack.push(res); // valueStack是为了计算而做的栈！！不可以加pointer
 //                        好崩溃，pointer到底加不加进valueStack啊啊啊啊
@@ -585,7 +734,7 @@ public class LLVMAnalyzer {
                 }
                 Function function = curModule.getFunction(ident.word);
                 if (function.returnType == Value.Type._i32) {
-                        Value result = new Value(curFunction.giveName(), Value.Type._i32);
+                        Value result = new Value(curFunction.newIdent(), Value.Type._i32);
                         if (funcRParams != null) {
                             // 有返回 有参数
                             ArrayList<Value> params = new ArrayList<Value>();
@@ -626,13 +775,14 @@ public class LLVMAnalyzer {
                 }
                 else {
                     Value abs = valueStack.pop();
-                    Value res = new Value(curFunction.giveName(), Value.Type._i32);
                     if (abs instanceof Constant) {
-                        ((Constant) res).value = -((Constant) abs).value;
+                        Constant res = new Constant(-((Constant) abs).value);
+                        valueStack.push(res);
                     } else {
+                        Value res = new Value(curFunction.newIdent(), Value.Type._i32);
                         builder.buildSubInstruction(curBasicBlock, res, new Constant(0), abs);
+                        valueStack.push(res);
                     }
-                    valueStack.push(res);
                 }
             }
             else if (operator.lexType == LexType.PLUS) {
@@ -670,13 +820,6 @@ public class LLVMAnalyzer {
             }
             mulExp1 = mulExp1.getMulExp();
         }
-//        System.out.println("in mul have unary : -----"+unaryExps.size());
-//        if (mulExp.getMulExp()!=null) {
-//            PrimaryExp p = mulExp.getUnaryExp().getPrimaryExp();
-//            System.out.println("aaaaaaaaaaaaa:::::" + (p.getNumber() != null ? p.getNumber().getContent().number : p.getlVal().getIdent().word));
-//            p = mulExp.getMulExp().getUnaryExp().getPrimaryExp();
-//            System.out.println("kanhaole:::::" + (p.getNumber() != null ? p.getNumber().getContent().number : p.getlVal().getIdent().word));
-//        }
         for (int i = 0; i < unaryExps.size(); i++) {
             visitUnaryExp(unaryExps.get(i));
             if (i > 0) {
@@ -684,7 +827,6 @@ public class LLVMAnalyzer {
                 if (isGlobalDecl || isConstExp) {
                     Integer operand2 = constValueStack.pop();
                     Integer operand1 = constValueStack.pop();
-//                    System.out.println(operand1 + " " + operator.lexType + " " + operand2);
                     constValueStack.push(calculate(operator, operand1, operand2));
                 }
                 else {
@@ -695,7 +837,7 @@ public class LLVMAnalyzer {
                         valueStack.push(new Constant(calculate(operator, ((Constant) operand1).value, ((Constant) operand2).value)));
                     }
                     else {
-                        Value result = new Value(curFunction.giveName(), Value.Type._i32);
+                        Value result = new Value(curFunction.newIdent(), Value.Type._i32);
                         if (operator.lexType == LexType.MULT) {
                             builder.buildMulInstruction(curBasicBlock, result, operand1, operand2);
                             valueStack.push(result);
@@ -705,13 +847,15 @@ public class LLVMAnalyzer {
                             valueStack.push(result);
                         }
                         else if (operator.lexType == LexType.MOD) {
-//                        a % b = a - (a/b)*b
-                            builder.buildSDivInstruction(curBasicBlock, result, operand1, operand2);
-                            Value result1 = new Value(curFunction.giveName(), Value.Type._i32);
-                            builder.buildMulInstruction(curBasicBlock, result1, result, operand2);
-                            Value result2 = new Value(curFunction.giveName(), Value.Type._i32);
-                            builder.buildSubInstruction(curBasicBlock, result2, operand1, result1);
-                            valueStack.push(result2);
+//                        a % b = a - (a/b)*b srem
+                            builder.buildSremInstruction(curBasicBlock, result, operand1, operand2);
+                            valueStack.push(result);
+//                            builder.buildSDivInstruction(curBasicBlock, result, operand1, operand2);
+//                            Value result1 = new Value(curFunction.newIdent(), Value.Type._i32);
+//                            builder.buildMulInstruction(curBasicBlock, result1, result, operand2);
+//                            Value result2 = new Value(curFunction.newIdent(), Value.Type._i32);
+//                            builder.buildSubInstruction(curBasicBlock, result2, operand1, result1);
+//                            valueStack.push(result2);
                         }
                     }
                 }
@@ -736,7 +880,6 @@ public class LLVMAnalyzer {
             }
             addExp1 = addExp1.getAddExp();
         }
-//        System.out.println("in add have muls : -----"+mulExps.size());
         for (int i = 0; i < mulExps.size(); i++) {
             visitMulExp(mulExps.get(i));
             if (i > 0) {
@@ -744,7 +887,6 @@ public class LLVMAnalyzer {
                 if (isGlobalDecl || isConstExp) {
                     Integer operand2 = constValueStack.pop();
                     Integer operand1 = constValueStack.pop();
-//                    System.out.println(operand1 + " " + operator.lexType + " " + operand2);
                     constValueStack.push(calculate(operator, operand1, operand2));
                 }
                 else {
@@ -755,7 +897,7 @@ public class LLVMAnalyzer {
                         valueStack.push(new Constant(calculate(operator, ((Constant) operand1).value, ((Constant) operand2).value)));
                     }
                     else {
-                        Value result = new Value(curFunction.giveName(), Value.Type._i32);
+                        Value result = new Value(curFunction.newIdent(), Value.Type._i32);
                         if (operator.lexType == LexType.MINU) {
                             builder.buildSubInstruction(curBasicBlock, result, operand1, operand2);
                         }
@@ -767,60 +909,171 @@ public class LLVMAnalyzer {
                 }
             }
         }
-//        if (!fuck && operator!=null){
-//            System.out.println(addExp.getAddExp().getAddExp().getMulExp().getUnaryExp().getPrimaryExp().getExp() == null ? "y" : "n");
-//            System.out.println(addExp.getAddExp().getAddExp().getMulExp().getUnaryExp().getPrimaryExp().getExp().getAddExp().getAddExp().getMulExp().getUnaryExp().getPrimaryExp().getNumber().getContent().number);
-//            fuck = true;
-//        }
         // 他妈的，就是AST错了，我他妈一个节点一个节点的输出的
     }
     private void visitRelExp (RelExp relExp) {
         AddExp addExp = relExp.getAddExp();
         RelExp relExp1 = relExp.getRelExp();
         Word operator = relExp.getOperator();
+        ArrayList<AddExp> addExps = new ArrayList<AddExp>();
+        ArrayList<Word> ops = new ArrayList<Word>();
+        addExps.add(addExp);
         if (operator != null) {
-            visitRelExp(relExp1);
-            visitAddExp(addExp);
+            ops.add(operator);
         }
-        else {
-            visitAddExp(addExp);
+        while (relExp1 != null) {
+            addExps.add(relExp1.getAddExp());
+            operator = relExp1.getOperator();
+            if (operator != null) {
+                ops.add(operator);
+            }
+            relExp1 = relExp1.getRelExp();
+        }
+        for (int i = 0; i < addExps.size(); i++) {
+            visitAddExp(addExps.get(i));
+            if (i > 0) {
+                operator = ops.get(i - 1);
+                Value relRes = valueStack.pop();
+                Value addRes = valueStack.pop();
+                Value res = new Value(curFunction.newIdent(), Value.Type._i1);
+                IcmpInstruction.IcmpType icmpType = null;
+                switch (operator.lexType) {
+                    case LSS -> icmpType = IcmpInstruction.IcmpType.slt;
+                    case LEQ -> icmpType = IcmpInstruction.IcmpType.sle;
+                    case GRE -> icmpType = IcmpInstruction.IcmpType.sgt;
+                    case GEQ -> icmpType = IcmpInstruction.IcmpType.sge;
+                    default -> System.out.println("怎么会这样");
+                }
+                builder.buildIcmpInstruction(curBasicBlock, icmpType, res, addRes, relRes);
+                Value res_i32 = new Value(curFunction.newIdent(), Value.Type._i32);
+                builder.buildZextInstruction(curBasicBlock, res_i32, Value.Type._i1, res, Value.Type._i32);
+                valueStack.push(res_i32);
+            }
         }
     }
     private void visitEqExp (EqExp eqExp) {
         RelExp relExp = eqExp.getRelExp();
         EqExp eqExp1 = eqExp.getEqExp();
         Word operator = eqExp.getOperator();
+        ArrayList<RelExp> relExps = new ArrayList<RelExp>();
+        ArrayList<Word> ops = new ArrayList<Word>();
+        relExps.add(relExp);
         if (operator != null) {
-            visitEqExp(eqExp1);
-            visitRelExp(relExp);
+            ops.add(operator);
         }
-        else {
-            visitRelExp(relExp);
+        while (eqExp1 != null) {
+            relExps.add(eqExp1.getRelExp());
+            operator = eqExp1.getOperator();
+            if (operator != null) {
+                ops.add(operator);
+            }
+            eqExp1 = eqExp1.getEqExp();
+        }
+        for (int i = 0; i < relExps.size(); i++) {
+            visitRelExp(relExps.get(i));
+            if (i > 0) {
+                operator = ops.get(i - 1);
+                Value relRes = valueStack.pop();
+                Value eqRes = valueStack.pop();
+                Value res = new Value(curFunction.newIdent(), Value.Type._i1);
+                IcmpInstruction.IcmpType icmpType = null;
+                switch (operator.lexType) {
+                    case EQL -> icmpType = IcmpInstruction.IcmpType.eq;
+                    case NEQ -> icmpType = IcmpInstruction.IcmpType.ne;
+                    default -> System.out.println("怎么会这样");
+                }
+                builder.buildIcmpInstruction(curBasicBlock, icmpType, res, relRes, eqRes);
+                Value res_i32 = new Value(curFunction.newIdent(), Value.Type._i32);
+                builder.buildZextInstruction(curBasicBlock, res_i32, Value.Type._i1, res, Value.Type._i32);
+                valueStack.push(res_i32);
+            }
         }
     }
-    private void visitLAndExp (LAndExp lAndExp) {
+    private void visitLAndExp (LAndExp lAndExp) { // TODO : 还没想好短路求值怎么搞
         EqExp eqExp = lAndExp.getEqExp();
         LAndExp lAndExp1 = lAndExp.getLandExp();
         Word operator = lAndExp.getOperator();
-        if (operator != null) {
-            visitLAndExp(lAndExp1);
-            visitEqExp(eqExp);
+        ArrayList<EqExp> eqExps = new ArrayList<EqExp>();
+        eqExps.add(eqExp);
+        while (lAndExp1 != null) {
+            eqExps.add(lAndExp1.getEqExp());
+            lAndExp1 = lAndExp1.getLandExp();
         }
-        else {
-            visitEqExp(eqExp);
+        for (int i = 0; i < eqExps.size(); i++) {
+            visitEqExp(eqExps.get(i));
+            Value eqRes = valueStack.pop();
+            Value res = new Value(curFunction.newIdent(), Value.Type._i1);
+            builder.buildIcmpInstruction(curBasicBlock, IcmpInstruction.IcmpType.ne, res, new Constant(0), eqRes);
+            BrInstruction br = builder.buildBrInstruction(curBasicBlock, res);
+            curBasicBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
+            if (i != eqExps.size() - 1) {
+                ((ifBlockBrHandler)curBrHandler).branches_lackTrueLabel.push(br);
+                ((ifBlockBrHandler)curBrHandler).branches_lackFalseLabel.push(br);
+//                if (i > 0) {
+                    while (((ifBlockBrHandler)curBrHandler).branches_lackTrueLabel.size() != 0) {
+                        BrInstruction brLackTrue = ((ifBlockBrHandler)curBrHandler).branches_lackTrueLabel.pop();
+                        brLackTrue.trueLabel = curBasicBlock;
+                    }
+//                }
+            }
+            else {
+                ((ifBlockBrHandler)curBrHandler).branches_ifBlock.push(br);
+                ((ifBlockBrHandler)curBrHandler).branches_lackFalseLabel.push(br);
+            }
         }
     }
-    private void visitLorExp (LOrExp lOrExp) {
+    private void visitLastLandExp(LAndExp lAndExp) {
+        EqExp eqExp = lAndExp.getEqExp();
+        LAndExp lAndExp1 = lAndExp.getLandExp();
+        Word operator = lAndExp.getOperator();
+        ArrayList<EqExp> eqExps = new ArrayList<EqExp>();
+        eqExps.add(eqExp);
+        while (lAndExp1 != null) {
+            eqExps.add(lAndExp1.getEqExp());
+            lAndExp1 = lAndExp1.getLandExp();
+        }
+        for (int i = 0; i < eqExps.size(); i++) {
+            visitEqExp(eqExps.get(i));
+            Value eqRes = valueStack.pop();
+            Value res = new Value(curFunction.newIdent(), Value.Type._i1);
+            builder.buildIcmpInstruction(curBasicBlock, IcmpInstruction.IcmpType.ne, res, new Constant(0), eqRes);
+            BrInstruction br = builder.buildBrInstruction(curBasicBlock, res);
+            curBasicBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
+            if (i != eqExps.size() - 1) {
+                ((ifBlockBrHandler)curBrHandler).branches_lackTrueLabel.push(br);
+                ((ifBlockBrHandler)curBrHandler).branches_elseBlock.push(br);
+//                if (i > 0) {
+                while (((ifBlockBrHandler)curBrHandler).branches_lackTrueLabel.size() != 0) {
+                    BrInstruction brLackTrue = ((ifBlockBrHandler)curBrHandler).branches_lackTrueLabel.pop();
+                    brLackTrue.trueLabel = curBasicBlock;
+                }
+//                }
+            }
+            else {
+                ((ifBlockBrHandler)curBrHandler).branches_ifBlock.push(br);
+                ((ifBlockBrHandler)curBrHandler).branches_elseBlock.push(br);
+            }
+//            System.out.println("in last landExp : " + curBasicBlock.getIdent());
+        }
+    }
+    private void visitLorExp (LOrExp lOrExp) { // TODO : 还没想好短路求值怎么搞
         LAndExp lAndExp = lOrExp.getlAndExp();
         LOrExp lOrExp1 = lOrExp.getlOrExp();
         Word operator = lOrExp.getOperator();
-        if (operator != null) {
-            visitLorExp(lOrExp1);
-            visitLAndExp(lAndExp);
+        ArrayList<LAndExp> lAndExps = new ArrayList<LAndExp>();
+        lAndExps.add(lAndExp);
+        while (lOrExp1 != null) {
+            lAndExps.add(lOrExp1.getlAndExp());
+            lOrExp1 = lOrExp1.getlOrExp();
         }
-        else {
-            visitLAndExp(lAndExp);
+        for (int i = 0; i < lAndExps.size() - 1; i++) {
+            visitLAndExp(lAndExps.get(i));
+            while (((ifBlockBrHandler)curBrHandler).branches_lackFalseLabel.size() != 0) {
+                BrInstruction brLackTrue = ((ifBlockBrHandler)curBrHandler).branches_lackFalseLabel.pop();
+                brLackTrue.falseLabel = curBasicBlock;
+            }
         }
+        visitLastLandExp(lAndExps.get(lAndExps.size() - 1));
     }
     private void visitConstExp (ConstExp constExp) {
         AddExp addExp = constExp.getAddExp();

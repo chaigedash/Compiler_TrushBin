@@ -16,7 +16,7 @@ public class Compiler {
 //        InputStreamReader inputStreamReader = null;
 //        OutputStreamWriter outputStreamWriter = null;
         IO io = IO.getIO();
-        io.setSrcFile("testfile.txt");
+        io.setSrcFile("testfile." + Config.getInstance().srcFileExtension);
         io.initFile("output.txt");
         io.initFile("llvm_ir.txt");
         io.initFile("error.txt");

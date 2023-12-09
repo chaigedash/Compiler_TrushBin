@@ -1,6 +1,8 @@
 package LLVM;
 
+import LLVM.Instruction.BrInstruction;
 import LLVM.Instruction.Instruction;
+import LLVM.Instruction.RetInstruction;
 import Utils.IO;
 
 import java.util.ArrayList;
@@ -17,14 +19,17 @@ public class BasicBlock extends Value {
         this.instructions.add(instruction);
     }
     public void print() {
-//        System.out.println("{");
-        IO.getIO().writelnToLLVM("{");
+        IO.getIO().writelnToLLVM(getIdent().substring(1)+":");
         for (Instruction instruction : instructions) {
 //            System.out.print("\t");
             IO.getIO().writeToLLVM("\t");
             instruction.print();
+            if (instruction instanceof BrInstruction && ((BrInstruction) instruction).cond == null) {
+                break;
+            }
+            if (instruction instanceof RetInstruction) {
+                break;
+            }
         }
-//        System.out.println("}");
-        IO.getIO().writelnToLLVM("}");
     }
 }

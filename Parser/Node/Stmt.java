@@ -23,7 +23,16 @@ public class Stmt {
     private ArrayList<Word> COMMAs;
 
     public enum StmtType {
-        LValEqExp, Exp, Block, ifStmt, forStmt, breakStmt, continueStmt, returnExp, getint, print
+        LValEqExp, Exp, Block, ifStmt, forStmt, breakStmt, continueStmt, returnExp, getint, print;
+        public String toString() {
+            switch (this) {
+                case LValEqExp: return "LValEqExp";
+                case Exp: return "Exp";
+                case Block: return "Block";
+                case ifStmt: return "ifStmt";
+                default: return "懒得写了";
+            }
+        }
     }
     private StmtType stmtType;
     private LVal lVal;

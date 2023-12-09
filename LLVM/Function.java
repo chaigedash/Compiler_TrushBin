@@ -20,7 +20,7 @@ public class Function extends Value {
     public void addArgument(Argument argument) {
         this.arguments.add(argument);
     }
-    public String giveName() {
+    public String newIdent() {
         index++;
         return "%" + Integer.valueOf(index - 1).toString();
     }
@@ -41,10 +41,11 @@ public class Function extends Value {
             }
             funcDefOutput.append("i32 ").append(argument.getIdent());
         }
-        funcDefOutput.append(") ");
-        IO.getIO().writeToLLVM(String.valueOf(funcDefOutput));
+        funcDefOutput.append(") {");
+        IO.getIO().writelnToLLVM(String.valueOf(funcDefOutput));
         for (BasicBlock block : basicBlocks) {
             block.print();
         }
+        IO.getIO().writelnToLLVM("}");
     }
 }
