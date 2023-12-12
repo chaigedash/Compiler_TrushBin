@@ -23,24 +23,23 @@ public class BrInstruction extends Instruction {
         if (cond != null) {
             String tL = "<null>", fL = "<null>";
             if (trueLabel == null) {
-//                System.out.println("no trueLabel");
+                System.out.println("no trueLabel");
             }
             else {
                 tL = trueLabel.getIdent();
             }
             if (falseLabel == null) {
-//                System.out.println("no falseLabel");
+                System.out.println("no falseLabel");
             }
             else {
                 fL = falseLabel.getIdent();
             }
             output = operator + " i1 " + cond.getIdent() + ", label " + tL + ", label " + fL;
         }
-
         else {
             String tL = "<null>";
             if (trueLabel == null) {
-//                System.out.println("no trueLabel");
+                System.out.println("no trueLabel");
             }
             else {
                 tL = trueLabel.getIdent();

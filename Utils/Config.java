@@ -9,7 +9,7 @@ public class Config {
     public boolean Parser = true;
     public boolean llVM = true;
     public boolean Error = true; // 无聊
-    public boolean llvmOUTPUTMODE = true; // true: both, false: onlyToFILE
+    public boolean llvmOUTPUTMODE = false; // true: both, false: onlyToFILE
 //    public String srcFileExtension = "c";
     public String srcFileExtension = "txt";
 }

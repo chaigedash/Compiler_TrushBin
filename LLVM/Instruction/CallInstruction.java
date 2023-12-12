@@ -53,10 +53,10 @@ public class CallInstruction extends Instruction{
                     output += ", ";
                 }
                 if (param instanceof Constant) {
-                    output += "i32 " + ((Constant) param).value;
+                    output += param.getType() + " " + ((Constant) param).value;
                 }
                 else {
-                    output += "i32 " + param.getIdent();
+                    output += param.getType() + " " + param.getIdent();
                 }
             }
             output += ")";

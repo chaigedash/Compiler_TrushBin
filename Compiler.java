@@ -56,7 +56,9 @@ public class Compiler {
         if (Config.getInstance().llVM) {
             LLVMAnalyzer irBuilder = LLVMAnalyzer.getInstance();
             irBuilder.setCompUnit(AST);
+            System.out.println("------------ir_BUILD------------");
             irBuilder.analyzeAST();
+            System.out.println("-----------ir_OUTPUT-----------");
             IO.getIO().writelnToLLVM(
                     "declare i32 @getint()\n" +
                             "declare void @putint(i32)\n" +

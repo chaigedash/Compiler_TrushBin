@@ -1,6 +1,7 @@
 package LLVM;
 
 import LLVM.Instruction.BrInstruction;
+import LLVM.Instruction.GetElementPtrInstruction;
 import LLVM.Instruction.IcmpInstruction;
 import SymbolTable_v2.*;
 import Lexer.LexType;
@@ -9,7 +10,6 @@ import Parser.Node.*;
 import Parser.Node.Number;
 
 import java.util.ArrayList;
-import java.util.Objects;
 import java.util.Stack;
 
 public class LLVMAnalyzer {
@@ -24,7 +24,6 @@ public class LLVMAnalyzer {
         this.AST = AST;
     }
     public void analyzeAST () {
-        System.out.println("----------------start analyze: ir--------------");
         visitCompUnit(AST);
     }
     public void print() {
@@ -71,7 +70,7 @@ public class LLVMAnalyzer {
             if (bh instanceof forBlockBrHandler) {
                 return (forBlockBrHandler) bh;
             }
-            bh = curBrHandler.preBrHandler;
+            bh = bh.preBrHandler;
         }
         return null;
     }
@@ -124,7 +123,7 @@ public class LLVMAnalyzer {
         putint.params.add(new Symbol_v2("", Symbol_v2.Type.param, Value.Type._i32));
         putch.params.add(new Symbol_v2("", Symbol_v2.Type.param, Value.Type._i32));
         putstr.params.add(new Symbol_v2("", Symbol_v2.Type.param, Value.Type._i8));
-        // TODO : putstr参数不对，感觉涉及数组
+        // FIXME : putstr参数不对，感觉涉及数组
         curSymbolTable.addSymbol(getint);
         curSymbolTable.addSymbol(putint);
         curSymbolTable.addSymbol(putch);
@@ -172,35 +171,116 @@ public class LLVMAnalyzer {
         curSymbolTable.addSymbol(symbol);
         ArrayList<ConstExp> constExps = constDef.getConstExps();
         ConstInitVal constInitVal = constDef.getConstInitVal();
-        for (int i = 0; i < constExps.size(); i++) {
-            visitConstExp(constExps.get(i));
-        }
-        visitConstInitVal(constInitVal);
-        int res = constValueStack.pop();
-        if (isGlobalDecl) {
-            builder.buildGlobal(curModule, ident.word, res, true);
-            symbol.setGlobal();
-        }
-        else {
-//            builder.buildConstant(curBasicBlock, curFunction.giveName(), res);
-            Pointer mem = new Pointer(curFunction.newIdent(), Value.Type._i32);
-            builder.buildAllocaInstruction(curBasicBlock, mem);
-            builder.buildStoreInstruction(curBasicBlock, new Constant(res), mem);
-            symbol.value = res;
-        }
-    }
-    private void visitConstInitVal (ConstInitVal constInitVal) {
-        ConstExp constExp = constInitVal.getConstExp();
-        ArrayList<ConstInitVal> constInitVals = constInitVal.getConstInitVals();
-        if (constExp != null) {
-            visitConstExp(constExp);
-        }
-        else { // TODO : 数组
-            for (ConstInitVal constInitVal1 : constInitVals) {
-                visitConstInitVal(constInitVal1);
+        Integer dimension1 = null, dimension2 = null;
+        switch (constExps.size()) {
+            case 0 : break;
+            case 1 : {
+                visitConstExp(constExps.get(0));
+                dimension1 = constValueStack.pop();
+                break;
+            }
+            case 2 : {
+                visitConstExp(constExps.get(0));
+                dimension1 = constValueStack.pop();
+                visitConstExp(constExps.get(1));
+                dimension2 = constValueStack.pop();
+                break;
             }
         }
+//        visitConstInitVal(constInitVal);
+        ArrayList<ConstExp> initExps = new ArrayList<ConstExp>();
+        if (constInitVal != null) {
+            if (constInitVal.getLBRACE() != null) { // array
+                if (constInitVal.getConstInitVals().get(0).getLBRACE() != null) { // dimension = 2
+                    // DFS
+                    for (ConstInitVal constInitVal1 : constInitVal.getConstInitVals()) {
+                        for (ConstInitVal constInitVal2 : constInitVal1.getConstInitVals()) {
+                            initExps.add(constInitVal2.getConstExp());
+                        }
+                    }
+                }
+                else { // dimension = 1
+                    for (ConstInitVal constInitVal1 : constInitVal.getConstInitVals()) {
+                        initExps.add(constInitVal1.getConstExp());
+                    }
+                }
+            }
+            else { // dimension = 0
+                initExps.add(constInitVal.getConstExp());
+            }
+        }
+        // n dimension -> 1 dimension
+        ArrayList<Integer> initRes = new ArrayList<Integer>();
+        boolean isInitAllZero = true;
+        for (ConstExp initExp : initExps) {
+            visitConstExp(initExp);
+            Integer newInitRes = constValueStack.pop();
+            initRes.add(newInitRes);
+            if (newInitRes != 0) {
+                isInitAllZero = false;
+            }
+        }
+        if (isGlobalDecl) {
+            if (isInitAllZero) {
+                builder.buildGlobal(curModule, ident.word, dimension1, dimension2, true);
+            }
+            else {
+                builder.buildGlobal(curModule, ident.word, initRes, dimension1, dimension2, true);
+            }
+            symbol.setGlobal();
+            symbol.setConstArray(initRes, dimension1, dimension2);
+        }
+        else {
+            // FIXME: 局部常量: 目前和局部变量做的是一模一样的，感觉要出锅
+            // 他妈的，真的出锅了，但是是因为忘记把寄存器加进符号表了
+            // 又出锅了, 但这次纯傻逼，二维转一维下标的表达式我写的行×行数+列。。。
+            Pointer mem = new Pointer(curFunction.newIdent(), Value.Type._i32);
+            if (dimension1 != null) {
+                builder.buildAllocaInstruction(curBasicBlock, mem, dimension1, dimension2, false);
+                if (dimension2 != null) {
+                    // dimension: 2
+                    for (int i = 0; i < dimension1 * dimension2; i += dimension2) {
+                        for(int j = i; j < i + dimension2; j++) {
+                            Pointer res = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, res, mem, dimension1, dimension2, new Constant(i/dimension2), new Constant(j%dimension2));
+                            if (res == null) System.out.println("原来是你小子");
+                            builder.buildStoreInstruction(curBasicBlock, new Constant(initRes.get(j)), res);
+                        }
+                    }
+                }
+                else {
+                    // dimension: 1
+                    for (int i = 0; i < dimension1; i++) {
+                        Pointer res = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                        builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, res, mem, dimension1, dimension2, new Constant(i), null);
+                        if (res == null) System.out.println("你小子");
+                        builder.buildStoreInstruction(curBasicBlock, new Constant(initRes.get(i)), res);
+                    }
+                }
+            }
+            else {
+                // dimension: 0
+                builder.buildAllocaInstruction(curBasicBlock, mem);
+                if (mem == null) System.out.println("原来是你小子");
+                builder.buildStoreInstruction(curBasicBlock, new Constant(initRes.get(0)), mem);
+            }
+            symbol.isConst = true;
+            symbol.setConstArray(initRes, dimension1, dimension2);
+            symbol.setPointer(mem);
+        }
     }
+//    private void visitConstInitVal (ConstInitVal constInitVal) {
+//        ConstExp constExp = constInitVal.getConstExp();
+//        ArrayList<ConstInitVal> constInitVals = constInitVal.getConstInitVals();
+//        if (constExp != null) {
+//            visitConstExp(constExp);
+//        }
+//        else {
+//            for (ConstInitVal constInitVal1 : constInitVals) {
+//                visitConstInitVal(constInitVal1);
+//            }
+//        }
+//    }
     private void visitVarDecl (VarDecl varDecl) {
         ArrayList<VarDef> varDefs = varDecl.getVarDefs();
         for (VarDef varDef : varDefs) {
@@ -213,46 +293,139 @@ public class LLVMAnalyzer {
         curSymbolTable.addSymbol(symbol);
         ArrayList<ConstExp> constExps = varDef.getConstExps();
         InitVal initVal = varDef.getInitVal();
-        for (ConstExp constExp : constExps) {
-            visitConstExp(constExp); // TODO : 数组的事儿
+        Integer dimension1 = null, dimension2 = null;
+        switch (constExps.size()) {
+            case 0 : break;
+            case 1 : {
+                visitConstExp(constExps.get(0));
+                dimension1 = constValueStack.pop();
+                break;
+            }
+            case 2 : {
+                visitConstExp(constExps.get(0));
+                dimension1 = constValueStack.pop();
+                visitConstExp(constExps.get(1));
+                dimension2 = constValueStack.pop();
+                break;
+            }
         }
+        ArrayList<Exp> initExps = new ArrayList<Exp>();
+        if (initVal != null) {
+            if (initVal.getLBRACE() != null) { // array
+                if (initVal.getInitVals().get(0).getLBRACE() != null) { // dimension = 2
+                    // DFS
+                    for (InitVal initVal1 : initVal.getInitVals()) {
+                        for (InitVal initVal2 : initVal1.getInitVals()) {
+                            initExps.add(initVal2.getExp());
+                        }
+                    }
+                }
+                else { // dimension = 1
+                    for (InitVal initVal1 : initVal.getInitVals()) {
+                        initExps.add(initVal1.getExp());
+                    }
+                }
+            }
+            else { // dimension = 0
+                initExps.add(initVal.getExp());
+            }
+        }
+        // n dimension -> 1 dimension
         if (isGlobalDecl) {
-            if (initVal != null) {
-                visitInitVal(initVal);
-                int res = constValueStack.pop();
-                builder.buildGlobal(curModule, ident.word, res, true);
+            if (initExps.size() > 0) {
+                ArrayList<Integer> initRes = new ArrayList<Integer>();
+                boolean isInitAllZero = true;
+                for (Exp initExp : initExps) {
+                    visitExp(initExp);
+                    Integer newInitRes = constValueStack.pop();
+                    initRes.add(newInitRes);
+                    if (newInitRes != 0) {
+                        isInitAllZero = false;
+                    }
+                }
+                if (isInitAllZero) {
+                    builder.buildGlobal(curModule, ident.word, dimension1, dimension2, false);
+                }
+                else {
+                    builder.buildGlobal(curModule, ident.word, initRes, dimension1, dimension2, false);
+                }
                 symbol.setGlobal();
+                symbol.setConstArray(initRes, dimension1, dimension2);
             }
             else {
-                builder.buildGlobal(curModule, ident.word, 0,  false);
+                builder.buildGlobal(curModule, ident.word, dimension1, dimension2, false);
                 symbol.setGlobal();
+                symbol.setArray(null, dimension1, dimension2); // 相当于初始化全0
             }
         }
         else {
-            Pointer memory = new Pointer(curFunction.newIdent(), Value.Type._i32);
-            builder.buildAllocaInstruction(curBasicBlock, memory);
-            symbol.setPointer(memory);
-            Value init = null;
-            if (initVal != null) {
-                visitInitVal(initVal);
-                init = valueStack.pop();
-                builder.buildStoreInstruction(curBasicBlock, init, memory);
+            //DONE : 局部变量还没做数组
+            ArrayList<Value> initRes = new ArrayList<Value>();
+            for (Exp initExp : initExps) {
+                visitExp(initExp);
+                Value newInitRes = valueStack.pop();
+                // 假定这些初始值都是常量
+                initRes.add(newInitRes);
             }
-        }
-        // TODO : 这个判断结构乱得逆天，有空改改
-    }
-    private void visitInitVal (InitVal initVal) {
-        Exp exp = initVal.getExp();
-        ArrayList<InitVal> initVals = initVal.getInitVals();
-        if (exp != null) {
-            visitExp(exp);
-        }
-        else {
-            for (InitVal initVal1 : initVals) {
-                visitInitVal(initVal1);
+            Pointer mem = new Pointer(curFunction.newIdent(), Value.Type._i32);
+            symbol.setPointer(mem);
+            ArrayList<Pointer> pointers = new ArrayList<Pointer>();
+            if (dimension1 != null) {
+                builder.buildAllocaInstruction(curBasicBlock, mem, dimension1, dimension2, false);
+                if (dimension2 != null) {
+                    // dimension: 2
+                    for (int i = 0; i < dimension1 * dimension2; i += dimension2) {
+                        for(int j = i; j < i + dimension2; j++) {
+                            Pointer res = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                            pointers.add(res);
+                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, res, mem, dimension1, dimension2, new Constant(i/dimension2), new Constant(j%dimension2));
+                            if (j < initRes.size())
+                                builder.buildStoreInstruction(curBasicBlock, initRes.get(j), res);
+                            else {
+                                builder.buildStoreInstruction(curBasicBlock, new Constant(0), res);
+                            }
+                        }
+                    }
+                }
+                else {
+                    // dimension: 1
+                    for (int i = 0; i < dimension1; i++) {
+                        Pointer res = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                        pointers.add(res);
+                        builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, res, mem, dimension1, dimension2, new Constant(i), null);
+                        if (i < initRes.size())
+                            builder.buildStoreInstruction(curBasicBlock, initRes.get(i), res);
+                        else {
+                            builder.buildStoreInstruction(curBasicBlock, new Constant(0), res);
+                        }
+                    }
+                }
             }
+            else {
+                // dimension: 0
+                pointers.add(mem);
+                builder.buildAllocaInstruction(curBasicBlock, mem);
+                if (initRes.size() > 0)
+                    builder.buildStoreInstruction(curBasicBlock, initRes.get(0), mem);
+            }
+            symbol.isConst = false;
+//            System.out.println("pointers : " + pointers.size());
+            symbol.setArray(pointers, dimension1, dimension2);
         }
+        // DONE : 这个判断结构乱得逆天，有空改改
     }
+//    private void visitInitVal (InitVal initVal) {
+//        Exp exp = initVal.getExp();
+//        ArrayList<InitVal> initVals = initVal.getInitVals();
+//        if (exp != null) {
+//            visitExp(exp);
+//        }
+//        else {
+//            for (InitVal initVal1 : initVals) {
+//                visitInitVal(initVal1);
+//            }
+//        }
+//    }
     private void visitFuncDef (FuncDef funcDef) {
         FuncType fType = funcDef.getFuncType();
         Word fName = funcDef.getIdent();
@@ -270,16 +443,20 @@ public class LLVMAnalyzer {
             visitFuncFParams(funcFParams);
         }
         curBasicBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
-        for (Argument arg : curFunction.arguments) {
-            Pointer memory = new Pointer(curFunction.newIdent(), Value.Type._i32);
-            builder.buildAllocaInstruction(curBasicBlock, memory);
-            builder.buildStoreInstruction(curBasicBlock, arg, memory);
-            for (Symbol_v2 param : temp_Params) {
-                if (param.ident.equals(arg.name)) {
-                    param.setPointer(memory);
-                }
+        for (int i = 0; i < curFunction.arguments.size(); i++) { // 传参实例化
+            // DONE: 这里下标都改成i就是正序，但是样例的答案都是逆序，为了方便对答案，暂时写的逆序，以后改回来
+            Argument arg = curFunction.arguments.get(i);
+//            Argument arg = curFunction.arguments.get(curFunction.arguments.size()-1-i);
+            Pointer ptr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+            temp_Params.get(i).setPointer(ptr);
+//            temp_Params.get(temp_Params.size()-1-i).setPointer(ptr);
+//            Integer ttt = arg.col == null ? -1 : arg.col;
+//            System.out.println("symbol : " + temp_Params.get(i).ident + " arg : " +arg.name + " col: " + ttt);
+            builder.buildAllocaInstruction(curBasicBlock, ptr, arg.col, null, true);
+            if (ptr == null) {
+                System.out.println("凭什么");
             }
-            // FIXME : 感觉这里可以性能优化，因为暂存表和arg表是一一对应
+            builder.buildStoreInstruction(curBasicBlock, arg, ptr, arg.col);
         }
         curSymbolTable.addSymbol(new Symbol_v2(fName.word, Symbol_v2.Type.function, returnType)); // 函数加进符号表
 //        curSymbolTable = curSymbolTable.createChildTable();
@@ -322,19 +499,28 @@ public class LLVMAnalyzer {
         Word ident = funcFParam.getIdent();
         ConstExp constExp = funcFParam.getConstExp();
         Value.Type type;
-        if (funcFParam.getLBRACK1() != null) {
+        Integer col = null;
+        if (funcFParam.getLBRACK1() == null) {
             type = Value.Type._i32;
         } else {
+            col = 0;
             type = Value.Type.Array;
         }
         if (constExp != null) {
-            visitConstExp(constExp); // TODO: 二维数组
+            visitConstExp(constExp);
+            col = constValueStack.pop();
         }
         Symbol_v2 paramSymbol = new Symbol_v2(ident.word, Symbol_v2.Type.param);
+        //DONE: 设置列宽 ( col = null(d0) || 0(d1) || int(d2) )
+//        paramSymbol.setFParam(col);
+        paramSymbol.col_fParam = col;
 //        curSymbolTable.addSymbol(paramSymbol);
         temp_Params.add(paramSymbol);
         String register = curFunction.newIdent();
-        builder.buildArgument(curFunction, register, type, ident.word);
+//        if (col == null) {
+//            System.out.println("hello " + curFunction.getIdent());
+//        }
+        builder.buildArgument(curFunction, register, type, ident.word, col);
 //        Pointer pointer = new Pointer(register, Value.Type._i32);
 //        paramSymbol.setPointer(pointer);
     }
@@ -375,7 +561,7 @@ public class LLVMAnalyzer {
         ForStmt forStmt1;
         ForStmt forStmt2;
         switch (stmtType) {
-            case LValEqExp :
+            case LValEqExp -> {
                 lVal = stmt.getlVal();
                 exp = stmt.getExp();
                 isWaitingForLVal = true;
@@ -386,45 +572,51 @@ public class LLVMAnalyzer {
                 Value expResult = valueStack.pop();
                 // DONE : 赋值没做，感觉还得看一遍指导书，应该还有落下的，但好困，晚安
                 if (lValValue instanceof Global) {
-                    builder.buildStoreInstruction(curBasicBlock, expResult, (Global)lValValue);
-                }
-                else {
+                    builder.buildStoreInstruction(curBasicBlock, expResult, (Global) lValValue);
+                } else {
+                    if (lValPointer == null) System.out.println("原来是你小子");
                     builder.buildStoreInstruction(curBasicBlock, expResult, lValPointer);
                     lValPointer = null; // 用完就扔！
                 }
-                break;
-            case Exp :
+            }
+            case Exp -> {
                 exp = stmt.getExp();
                 if (exp != null) {
                     visitExp(exp);
                 }
-                break;
-            case Block:
+            }
+            case Block -> {
                 block = stmt.getBlock();
                 visitBlock(block);
-                break;
-            case ifStmt:
+            }
+            case ifStmt -> {
                 cond = stmt.getCond();
                 stmt1 = stmt.getStmt1();
                 stmt2 = stmt.getStmt2();
-                BasicBlock ifBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
-                builder.buildBrInstruction(curBasicBlock, ifBlock);
-                curBasicBlock = ifBlock;
+//                BasicBlock ifBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
+//                builder.buildBrInstruction(curBasicBlock, ifBlock);
+//                curBasicBlock = ifBlock;
+                // FIXME: 不知道为啥有上边三行，目测删了没啥影响,但是如果出锅了就加回来吧
 //                System.out.println("if block : " + curBasicBlock.getIdent());
                 newBrHandler(BrHandler.Type.ifBlock);
                 visitCond(cond);
                 BrInstruction br = null;
-                while (((ifBlockBrHandler)curBrHandler).branches_ifBlock.size() != 0) {
-                    br = ((ifBlockBrHandler)curBrHandler).branches_ifBlock.pop();
+                while (((ifBlockBrHandler) curBrHandler).branches_ifBlock.size() != 0) {
+                    br = ((ifBlockBrHandler) curBrHandler).branches_ifBlock.pop();
                     br.trueLabel = curBasicBlock;
                 }
                 visitStmt(stmt1); // if block
                 if (stmt2 != null) { // else block
                     BasicBlock elseBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
                     BrInstruction bNext = builder.buildBrInstruction(curBasicBlock, null);
-                    while (((ifBlockBrHandler)curBrHandler).branches_elseBlock.size() != 0) {
-                        br = ((ifBlockBrHandler)curBrHandler).branches_elseBlock.pop();
-                        br.falseLabel = elseBlock;
+                    while (((ifBlockBrHandler) curBrHandler).branches_elseBlock.size() != 0) {
+                        br = ((ifBlockBrHandler) curBrHandler).branches_elseBlock.pop();
+                        if (br.cond != null) {
+                            br.falseLabel = elseBlock;
+                        }
+                        else {
+                            br.trueLabel = elseBlock;
+                        }
                     }
                     curBasicBlock = elseBlock;
                     visitStmt(stmt2);
@@ -432,19 +624,23 @@ public class LLVMAnalyzer {
                     builder.buildBrInstruction(curBasicBlock, nextBasicBlock);
                     bNext.trueLabel = nextBasicBlock;
                     curBasicBlock = nextBasicBlock;
-                }
-                else {
+                } else {
                     BasicBlock nextBasicBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
                     builder.buildBrInstruction(curBasicBlock, nextBasicBlock);
-                    while (((ifBlockBrHandler)curBrHandler).branches_elseBlock.size() != 0) {
-                        br = ((ifBlockBrHandler)curBrHandler).branches_elseBlock.pop();
-                        br.falseLabel = nextBasicBlock;
+                    while (((ifBlockBrHandler) curBrHandler).branches_elseBlock.size() != 0) {
+                        br = ((ifBlockBrHandler) curBrHandler).branches_elseBlock.pop();
+                        if (br.cond != null) {
+                            br.falseLabel = nextBasicBlock;
+                        }
+                        else {
+                            br.trueLabel = nextBasicBlock;
+                        }
                     }
                     curBasicBlock = nextBasicBlock;
                 }
                 curBrHandler = curBrHandler.preBrHandler;
-                break;
-            case forStmt:
+            }
+            case forStmt -> {
 //                System.out.println("for block : " + curBasicBlock.getIdent());
                 forStmt1 = stmt.getForStmt1();
                 cond = stmt.getCond();
@@ -463,20 +659,21 @@ public class LLVMAnalyzer {
                     visitCond(cond);
                     cycleBlock = curBasicBlock;
                     // curBasicBlock : cond_next = cycleBlock
-                    while (((ifBlockBrHandler)curBrHandler).branches_ifBlock.size() > 0) {
-                        BrInstruction br_for_if = ((ifBlockBrHandler)curBrHandler).branches_ifBlock.pop();
+                    while (((ifBlockBrHandler) curBrHandler).branches_ifBlock.size() > 0) {
+                        BrInstruction br_for_if = ((ifBlockBrHandler) curBrHandler).branches_ifBlock.pop();
                         br_for_if.trueLabel = curBasicBlock;
                     }
-                    while (((ifBlockBrHandler)curBrHandler).branches_elseBlock.size() > 0) {
+                    while (((ifBlockBrHandler) curBrHandler).branches_elseBlock.size() > 0) {
                         forBlockBrHandler recentFor = findRecentForBrHandler();
                         if (recentFor != null) {
-                            BrInstruction lackElse = ((ifBlockBrHandler)curBrHandler).branches_elseBlock.pop();
+                            BrInstruction lackElse = ((ifBlockBrHandler) curBrHandler).branches_elseBlock.pop();
+//                            System.out.println("y");
                             recentFor.branches_nextBlock.push(lackElse);
-                        }
-                        else {
+                        } else {
                             System.out.println("error: no for block");
                         }
                     }
+//                    System.out.println("--");
                     curBrHandler = curBrHandler.preBrHandler;
                 }
                 else {
@@ -494,20 +691,24 @@ public class LLVMAnalyzer {
                     visitForStmt(forStmt2);
                     if (condBlock != null) {
                         builder.buildBrInstruction(curBasicBlock, condBlock);
-                    }
-                    else {
+                    } else {
                         builder.buildBrInstruction(curBasicBlock, cycleBlock);
                     }
-                    while (((forBlockBrHandler)curBrHandler).branches_thenBlock.size() > 0) {
-                        BrInstruction t = ((forBlockBrHandler)curBrHandler).branches_thenBlock.pop();
+                    while (((forBlockBrHandler) curBrHandler).branches_thenBlock.size() > 0) {
+                        BrInstruction t = ((forBlockBrHandler) curBrHandler).branches_thenBlock.pop();
                         t.trueLabel = thenBlock;
                     }
 //                    DONE : stmt -> forStmt2
                 }
                 else {
-                    builder.buildBrInstruction(curBasicBlock, condBlock);
-                    while (((forBlockBrHandler)curBrHandler).branches_thenBlock.size() > 0) {
-                        BrInstruction t = ((forBlockBrHandler)curBrHandler).branches_thenBlock.pop();
+                    if (condBlock != null) {
+                        builder.buildBrInstruction(curBasicBlock, condBlock);
+                    }
+                    else {
+                        builder.buildBrInstruction(curBasicBlock, cycleBlock);
+                    }
+                    while (((forBlockBrHandler) curBrHandler).branches_thenBlock.size() > 0) {
+                        BrInstruction t = ((forBlockBrHandler) curBrHandler).branches_thenBlock.pop();
                         if (condBlock != null) {
                             t.trueLabel = condBlock;
                         }
@@ -518,12 +719,19 @@ public class LLVMAnalyzer {
                 }
                 nextBlock = builder.buildBasicBlock(curFunction, curFunction.newIdent());
 //                System.out.println(nextBlock.getIdent() + "----->" + ((forBlockBrHandler)curBrHandler).branches_nextBlock.size());
-                while (((forBlockBrHandler)curBrHandler).branches_nextBlock.size() > 0) {
-                    BrInstruction br_for = ((forBlockBrHandler)curBrHandler).branches_nextBlock.pop();
+                if (curBasicBlock.getIdent().equals("%77")) {
+                    System.out.println("next_________>" + ((forBlockBrHandler) curBrHandler).branches_nextBlock.size());
+                }
+                while (((forBlockBrHandler) curBrHandler).branches_nextBlock.size() > 0) {
+                    BrInstruction br_for = ((forBlockBrHandler) curBrHandler).branches_nextBlock.pop();
                     if (br_for.cond == null) {
+                        System.out.print("curBB is " + curBasicBlock.getIdent());
+                        if (br_for.trueLabel != null) {
+                            System.out.println("??????????????????????????");
+                        }
                         br_for.trueLabel = nextBlock;
-                    }
-                    else {
+                        System.out.println("   ->    br_tL is " + br_for.trueLabel.getIdent());
+                    } else {
                         br_for.falseLabel = nextBlock;
                     }
                 }
@@ -531,34 +739,33 @@ public class LLVMAnalyzer {
                 curBasicBlock = nextBlock;
                 System.out.println("condBlock = " + (condBlock != null ? condBlock.getIdent() : "<null>") + " thenBlock = " + (thenBlock != null ? thenBlock.getIdent() : "<null>") + " nextBlock = " + nextBlock.getIdent());
                 curBrHandler = curBrHandler.preBrHandler;
-                break;
-            case breakStmt:
+            }
+            case breakStmt -> {
                 BrInstruction breakBr = builder.buildBrInstruction(curBasicBlock, null);
                 forBlockBrHandler recentFor_b = findRecentForBrHandler();
                 recentFor_b.branches_nextBlock.push(breakBr);
+            }
 //                if (curBasicBlock.getIdent().equals("%116")) {
 //                    System.out.println("hei");
 //                    System.out.println(recentFor_b.branches_nextBlock.size());
 //                }
-                break;
-            case continueStmt:
+            case continueStmt -> {
                 BrInstruction continueBr = builder.buildBrInstruction(curBasicBlock, null);
                 forBlockBrHandler recentFor_c = findRecentForBrHandler();
                 recentFor_c.branches_thenBlock.push(continueBr);
-                break;
-            case returnExp:
+            }
+            case returnExp -> {
                 exp = stmt.getExp();
                 if (exp != null) {
                     visitExp(exp);
                     Value result = valueStack.pop();
                     builder.buildRetInstruction(curBasicBlock, result);
-                }
-                else {
+                } else {
                     builder.buildRetInstruction(curBasicBlock);
                 }
+            }
 //                isReturned = true;
-                break;
-            case getint: // TODO : 感觉逻辑有问题
+            case getint -> { // FIXME : 感觉逻辑有、怪
                 lVal = stmt.getlVal();
                 isWaitingForLVal = true;
                 visitLVal(lVal);
@@ -568,14 +775,13 @@ public class LLVMAnalyzer {
                 Function function = curModule.getFunction("getint");
                 builder.buildCallInstruction(curBasicBlock, getintReturn, function);
                 if (lVal_getint instanceof Global) {
-                    builder.buildStoreInstruction(curBasicBlock, getintReturn, (Global)lVal_getint);
-                }
-                else {
+                    builder.buildStoreInstruction(curBasicBlock, getintReturn, (Global) lVal_getint);
+                } else {
                     builder.buildStoreInstruction(curBasicBlock, getintReturn, lValPointer);
                     lValPointer = null; // 用完就扔！
                 }
-                break;
-            case print:
+            }
+            case print -> {
                 String formatString = stmt.getFormatString().word;
                 exps = stmt.getExps();
                 for (Exp exp1 : exps) {
@@ -583,7 +789,7 @@ public class LLVMAnalyzer {
                 }
                 Function putint = curModule.getFunction("putint");
                 Function putch = curModule.getFunction("putch");
-//                Function putstr = curModule.getFunction("putstr"); // TODO：暂时没用上，真怕它用上
+//                Function putstr = curModule.getFunction("putstr"); // FIXME：暂时没用上，真怕它用上
                 ArrayList<Integer> indexes = countStrPlaceholder(formatString);
                 int indexesIndex = 0;
                 Stack<Value> params = new Stack<Value>();
@@ -597,22 +803,21 @@ public class LLVMAnalyzer {
                         builder.buildCallInstruction(curBasicBlock, putint, params.pop());
                         indexesIndex++;
                         i++;
-                    }
-                    else {
+                    } else {
                         // call putch
                         Constant ch = null;
                         if (formatString.charAt(i) == '\\' && formatString.charAt(i + 1) == 'n') {
                             ch = new Constant('\n');
                             i++;
-                        }
-                        else {
+                        } else {
                             ch = new Constant(formatString.charAt(i));
                         }
                         builder.buildCallInstruction(curBasicBlock, putch, ch);
                     }
                 }
-                break;
-            default:break;
+            }
+            default -> {
+            }
         }
     }
     private void visitForStmt (ForStmt forStmt) {
@@ -643,44 +848,282 @@ public class LLVMAnalyzer {
     private void visitLVal (LVal lVal) {
         Word ident = lVal.getIdent();
         ArrayList<Exp> exps = lVal.getExps();
-        for (Exp exp : exps) {
-            visitExp(exp); // TODO 数组的事儿
+        Value dimension1 = null, dimension2 = null;
+        switch (exps.size()) {
+            case 0 -> {
+            }
+            case 1 -> {
+                visitExp(exps.get(0));
+                dimension1 = valueStack.pop();
+            }
+            case 2 -> {
+                visitExp(exps.get(0));
+                dimension1 = valueStack.pop();
+                visitExp(exps.get(1));
+                dimension2 = valueStack.pop();
+            }
         }
         Symbol_v2 symbol = curSymbolTable.searchSymbol(ident.word);
-        if (symbol != null) { // Todo: 没考虑数组呢还
+        if (symbol != null) {
             if (symbol.isGlobal) {
                 Global globalLVal = curModule.getGlobal(symbol.ident);
-                if (isGlobalDecl || isConstExp) {
-                    constValueStack.push(globalLVal.value);
+                if (isGlobalDecl || isConstExp) { // 姑且认为全局定义时或者常量运算的数组index(x, y)也是Constant
+                    Value x = dimension1 != null ? dimension1 : new Constant(0);
+                    Value y = dimension2 != null ? dimension2 : new Constant(0);
+//                    System.out.println("你在作妖？");
+                    Integer arrayValue = symbol.getConstArrayValue(((Constant)x).value, ((Constant)y).value);
+                    if (arrayValue == null) System.out.println("Error : load constArrayValue from symbol is null");
+                    else constValueStack.push(arrayValue);
                 }
-                else {
-                    Value res = new Value(curFunction.newIdent(), Value.Type._i32);
-                    builder.buildLoadInstruction(curBasicBlock, res, globalLVal);
-                    valueStack.push(res);
-                    if (isWaitingForLVal){
-                        lValPointer = globalLVal;
+                else { // DONE：没有做全局数组在局部取值
+                    if (symbol.dimension1 != null && symbol.dimension2 == null) { // 被调用的数组是1维的
+                        if (dimension1 != null) { // 产生的是一个实型
+                            Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, globalLVal, symbol.dimension1, null, dimension1, null);
+                            Value res = new Value(curFunction.newIdent(), Value.Type._i32);
+                            builder.buildLoadInstruction(curBasicBlock, res, Value.Type._i32, resPtr);
+                            valueStack.push(res);
+                            if (isWaitingForLVal){
+                                lValPointer = resPtr;
+                            }
+                        }
+                        else { // 产生一个i32*
+                            Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, globalLVal, symbol.dimension1, null, new Constant(0), null);
+                            valueStack.push(resPtr);
+                            if (isWaitingForLVal){
+                                System.out.println("理论上不可能是左值赋值语句跳转过来的");
+                            }
+                        }
+                    }
+                    else if (symbol.dimension1 != null && symbol.dimension2 != null) { // 被调用的数组是2维的
+                        if (dimension1 != null && dimension2 != null) { // 产生一个实型
+                            Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, globalLVal, symbol.dimension1, symbol.dimension2, dimension1, dimension2);
+                            Value res = new Value(curFunction.newIdent(), Value.Type._i32);
+                            builder.buildLoadInstruction(curBasicBlock, res, Value.Type._i32, resPtr);
+                            valueStack.push(res);
+                            if (isWaitingForLVal){
+                                lValPointer = resPtr;
+                            }
+                        }
+                        else if (dimension1 != null && dimension2 == null) { // 产生一个i32 *
+//                            Pointer headPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+//                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, headPtr, globalLVal, symbol.dimension1, symbol.dimension2, new Constant(0), null);
+//                            Value off = new Value(curFunction.newIdent(), Value.Type._i32);
+//                            builder.buildMulInstruction(curBasicBlock, off, new Constant(symbol.dimension1), dimension1);
+//                            Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+//                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, headPtr, symbol.dimension1, null, off, null);
+
+//                            Pointer headPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+//                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, headPtr, globalLVal, symbol.dimension1, symbol.dimension2,  dimension1, null);
+                            Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, globalLVal, symbol.dimension1, symbol.dimension2, new Constant(0), new Constant(0));
+
+                            valueStack.push(resPtr);
+                            if (isWaitingForLVal){
+                                System.out.println("理论上不可能是左值赋值语句跳转过来的");
+                            }
+                        }
+                        else { // 产生一个i32 **
+                            Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                            resPtr.col = symbol.dimension2;
+                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, globalLVal, symbol.dimension1, symbol.dimension2, new Constant(0), null);
+                            valueStack.push(resPtr);
+                            if (isWaitingForLVal){
+                                System.out.println("理论上不可能是左值赋值语句跳转过来的");
+                            }
+                        }
+                    }
+                    else { // 被调用的全局变量是0维的
+                        Value res = new Value(curFunction.newIdent(), Value.Type._i32);
+                        builder.buildLoadInstruction(curBasicBlock, res, Value.Type._i32, globalLVal);
+                        valueStack.push(res);
+                        if (isWaitingForLVal){
+                            lValPointer = globalLVal;
+                        }
                     }
                 }
             }
-            else {
-                if (symbol.value != null) {
-                    // 这个左值是局部常量
+            else if (symbol.isConst) { // 这个左值是局部常量
+                Value x = dimension1 != null ? dimension1 : new Constant(0);
+                Value y = dimension2 != null ? dimension2 : new Constant(0);
+                if ((x instanceof Constant && y instanceof Constant)) {
+                    Integer arrayValue = symbol.getConstArrayValue(((Constant)x).value, ((Constant)y).value);
+                    if (arrayValue == null) System.out.println("Error : load constArrayValue from symbol is null");
                     if (isConstExp) {
-                        constValueStack.push(symbol.value);
+                        constValueStack.push(arrayValue);
                     }
                     else {
-                        valueStack.push(new Constant(symbol.value));
+                        valueStack.push(new Constant(arrayValue));
                     }
                 }
-                else {
-                    // 这个左值是局部变量
-                    if (isConstExp) {
+                else { // DONE: 数组下标是变量
+                    if (isConstExp) { // FIXME: 我认为constExp里不能出现变量下标
+                        System.out.println("Error: constExp里能出现变量下标");
                     }
                     else {
+                        Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                        if (symbol.getPointer() == null) {
+                            System.out.println("我求求你错吧");
+                        }
+                        builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, symbol.getPointer(), symbol.dimension1, symbol.dimension2, x, y);
                         Value res = new Value(curFunction.newIdent(), Value.Type._i32);
-                        builder.buildLoadInstruction(curBasicBlock, res, symbol.getPointer());
-                        valueStack.push(res); // valueStack是为了计算而做的栈！！不可以加pointer
-//                        好崩溃，pointer到底加不加进valueStack啊啊啊啊
+                        builder.buildLoadInstruction(curBasicBlock, res, Value.Type._i32, resPtr);
+                        valueStack.push(res);
+                    }
+                }
+            }
+            else if (symbol.symbolType == Symbol_v2.Type.param) { // 函数参数
+                if (symbol.col_fParam == null) { // 调用0维
+                    Value res = new Value(curFunction.newIdent(), Value.Type._i32);
+                    builder.buildLoadInstruction(curBasicBlock, res, Value.Type._i32, symbol.getPointer());
+                    valueStack.push(res);
+                    if (isWaitingForLVal) {
+                        lValPointer = symbol.getPointer();
+                    }
+                }
+                else if (symbol.col_fParam == 0) { // 调用1维
+                    if (dimension1 == null) { // 调用传来的一维数组，整体传出去(i32*)
+                        Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                        if (symbol.getPointer() == null) {
+                            System.out.println("我求求你错吧");
+                        }
+                        builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, symbol.getPointer(), symbol.col_fParam, null, new Constant(0), null);
+                        valueStack.push(resPtr);
+                    }
+                    else { // 实型
+                        Pointer headPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                        builder.buildLoadInstruction(curBasicBlock, headPtr, Value.Type._i32, symbol.getPointer(), 0);
+                        Pointer ptr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                        builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, ptr, headPtr, 0, dimension1);
+                        Value res = new Value(curFunction.newIdent(), Value.Type._i32);
+                        builder.buildLoadInstruction(curBasicBlock, res, Value.Type._i32, ptr);
+                        valueStack.push(res);
+                        if (isWaitingForLVal) {
+                            lValPointer = ptr;
+                        }
+                    }
+                }
+                else { // 调用参数传来的二维数组( a[][n] )
+                    if (dimension1 == null) { // a
+                        // TODO : 有、没想好👇
+                        Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                        resPtr.col = symbol.col_fParam;
+                        builder.buildLoadInstruction(curBasicBlock, resPtr, Value.Type._i32, symbol.getPointer(), symbol.col_fParam);
+                        valueStack.push(resPtr);
+                        if (isWaitingForLVal) System.out.println("理论上不可能是左值赋值语句跳转过来的");
+                    }
+                    else if (dimension1 != null && dimension2 == null) { // a[x]
+                        Pointer headPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                        builder.buildLoadInstruction(curBasicBlock, headPtr, Value.Type._i32, symbol.getPointer(), symbol.col_fParam);
+                        Pointer tempPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                        builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, tempPtr, headPtr, symbol.col_fParam, dimension1, null);
+                        Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                        builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, tempPtr, symbol.col_fParam, null, new Constant(0), new Constant(0));
+                        valueStack.push(resPtr);
+                        if (isWaitingForLVal) System.out.println("理论上不可能是左值赋值语句跳转过来的");
+                    }
+                    else { // 实型
+                        Value x = dimension1 != null ? dimension1 : new Constant(0);
+                        Value y = dimension2 != null ? dimension2 : new Constant(0);
+                        Pointer headPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                        builder.buildLoadInstruction(curBasicBlock, headPtr, Value.Type._i32, symbol.getPointer(),symbol.col_fParam);
+                        Pointer ptr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                        builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, ptr, headPtr, symbol.col_fParam, x);
+                        Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                        builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, ptr, symbol.col_fParam, new Constant(0), y);
+                        Value res = new Value(curFunction.newIdent(), Value.Type._i32);
+                        builder.buildLoadInstruction(curBasicBlock, res, Value.Type._i32, resPtr);
+                        valueStack.push(res);
+                        if (isWaitingForLVal) {
+                            lValPointer = resPtr;
+                        }
+                    }
+
+                }
+            }
+            else { // 这个左值是局部变量 DONE: 还没做局部变量的数组取值
+                if (isConstExp) {
+                    System.out.println("Error : 这里理论不可达");
+                }
+                else {
+                    // if dimensionN == null -> N = Constant(0)
+                    if (symbol.dimension1 != null && symbol.dimension2 == null) { // 被调用的数组是1维的
+                        Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                        if (dimension1 != null) { // 产生的是一个实型
+                            if (symbol.getPointer() == null) {
+                                System.out.println("谁来救我aaa");
+                            }
+                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, symbol.getPointer(), symbol.dimension1, null, dimension1, null);
+                            Value res = new Value(curFunction.newIdent(), Value.Type._i32);
+                            builder.buildLoadInstruction(curBasicBlock, res, Value.Type._i32, resPtr);
+                            valueStack.push(res);
+                            if (isWaitingForLVal){
+                                lValPointer = resPtr;
+                            }
+                        }
+                        else { // 产生一个i32*
+                            if (symbol.getPointer() == null) {
+                                System.out.println("谁来救我1");
+                            }
+                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, symbol.getPointer(), symbol.dimension1, null, new Constant(0), null);
+                            valueStack.push(resPtr);
+                            if (isWaitingForLVal){
+//                                lValPointer = resPtr;
+                                System.out.println("理论上不可能是左值赋值语句跳转过来的");
+                            }
+                        }
+                    }
+                    else if (symbol.dimension1 != null && symbol.dimension2 != null) { // 被调用的数组是2维的
+                        if (dimension1 != null && dimension2 != null) { // 产生一个实型
+                            Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                            if (symbol.getPointer() == null) {
+                                System.out.println("谁来救我2");
+                            }
+                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, symbol.getPointer(), symbol.dimension1, symbol.dimension2, dimension1, dimension2);
+                            Value res = new Value(curFunction.newIdent(), Value.Type._i32);
+                            builder.buildLoadInstruction(curBasicBlock, res, Value.Type._i32, resPtr);
+                            valueStack.push(res);
+                            if (isWaitingForLVal){
+                                lValPointer = resPtr;
+                            }
+                        }
+                        else if (dimension1 != null && dimension2 == null) { // 产生一个i32 *
+//                            Pointer headPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+//                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, headPtr, symbol.getPointer(), symbol.dimension1, symbol.dimension2, new Constant(0), dimension1);
+////                            Value off = new Value(curFunction.newIdent(), Value.Type._i32);
+////                            builder.buildMulInstruction(curBasicBlock, off, new Constant(symbol.dimension1), dimension1);
+//                            Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+//                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, headPtr, symbol.dimension2, null, new Constant(0), new Constant(0));
+
+                            Pointer headPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, headPtr, symbol.getPointer(), symbol.dimension1, symbol.dimension2,  dimension1, null);
+                            Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, headPtr, symbol.dimension2, new Constant(0), new Constant(0));
+
+                            valueStack.push(resPtr);
+                            if (isWaitingForLVal){
+                                System.out.println("理论上不可能是左值赋值语句跳转过来的");
+                            }
+                        }
+                        else { // 产生一个i32 **
+                            Pointer resPtr = new Pointer(curFunction.newIdent(), Value.Type._i32);
+                            resPtr.col = symbol.dimension2;
+                            if (symbol.getPointer() == null) {
+                                System.out.println("谁来救我");
+                            }
+                            builder.buildGetElementPtrInstruction(curBasicBlock, Value.Type._i32, resPtr, symbol.getPointer(), symbol.dimension1, symbol.dimension2, new Constant(0), null);
+                            valueStack.push(resPtr);
+                            if (isWaitingForLVal){
+                                System.out.println("理论上不可能是左值赋值语句跳转过来的");
+                            }
+                        }
+                    }
+                    else { // 被调用的全局变量是0维的
+                        Value res = new Value(curFunction.newIdent(), Value.Type._i32);
+                        builder.buildLoadInstruction(curBasicBlock, res, Value.Type._i32, symbol.getPointer());
+                        valueStack.push(res);
                         if (isWaitingForLVal){
                             lValPointer = symbol.getPointer();
                         }
@@ -789,7 +1232,15 @@ public class LLVMAnalyzer {
 
             }
             else if (operator.lexType == LexType.NOT) {
-                // TODO: 判断还没做
+                // DONE : 判断还没做
+                Value oppo = valueStack.pop();
+                Value src = new Value(curFunction.newIdent(), Value.Type._i1);
+                Value res = new Value(curFunction.newIdent(), Value.Type._i1);
+                Value zextRes = new Value(curFunction.newIdent(), Value.Type._i32);
+                builder.buildIcmpInstruction(curBasicBlock, IcmpInstruction.IcmpType.ne, src, oppo, new Constant(0));
+                builder.buildXorInstruction(curBasicBlock, res, src);
+                builder.buildZextInstruction(curBasicBlock, zextRes, Value.Type._i1, res, Value.Type._i32);
+                valueStack.push(zextRes);
             }
             else {
                 // plus => nothing
@@ -989,7 +1440,7 @@ public class LLVMAnalyzer {
             }
         }
     }
-    private void visitLAndExp (LAndExp lAndExp) { // TODO : 还没想好短路求值怎么搞
+    private void visitLAndExp (LAndExp lAndExp) { // DONE : 还没想好短路求值怎么搞
         EqExp eqExp = lAndExp.getEqExp();
         LAndExp lAndExp1 = lAndExp.getLandExp();
         Word operator = lAndExp.getOperator();
@@ -1056,7 +1507,7 @@ public class LLVMAnalyzer {
 //            System.out.println("in last landExp : " + curBasicBlock.getIdent());
         }
     }
-    private void visitLorExp (LOrExp lOrExp) { // TODO : 还没想好短路求值怎么搞
+    private void visitLorExp (LOrExp lOrExp) { // DONE : 还没想好短路求值怎么搞
         LAndExp lAndExp = lOrExp.getlAndExp();
         LOrExp lOrExp1 = lOrExp.getlOrExp();
         Word operator = lOrExp.getOperator();

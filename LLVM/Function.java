@@ -1,5 +1,6 @@
 package LLVM;
 
+import Utils.ArrayHandler;
 import Utils.IO;
 
 import java.util.ArrayList;
@@ -22,7 +23,7 @@ public class Function extends Value {
     }
     public String newIdent() {
         index++;
-        return "%" + Integer.valueOf(index - 1).toString();
+        return "%" + "fuck" + Integer.valueOf(index - 1).toString();
     }
     public void print() {
         StringBuilder funcDefOutput = new StringBuilder("define dso_local");
@@ -39,7 +40,12 @@ public class Function extends Value {
             if (i != 0) {
                 funcDefOutput.append(", ");
             }
-            funcDefOutput.append("i32 ").append(argument.getIdent());
+            String type = ArrayHandler.getInstance().getType(Type._i32, argument.col, null);
+            funcDefOutput.append(type);
+            if (argument.col != null) {
+                funcDefOutput.append("*");
+            }
+            funcDefOutput.append(" ").append(argument.getIdent());
         }
         funcDefOutput.append(") {");
         IO.getIO().writelnToLLVM(String.valueOf(funcDefOutput));

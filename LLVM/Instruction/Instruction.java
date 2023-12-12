@@ -5,7 +5,7 @@ import LLVM.User;
 
 public abstract class Instruction extends User{
     public enum Operator {
-        Add, Sub, Mul, Div, Srem, And, Or,
+        Add, Sub, Mul, Div, Srem, And, Or, Xor,
         Lt, Le, Ge, Gt, Eq, Ne,
         Zext, Trunc,
         Alloca, Load, Store, GetElementPtr, Icmp,
@@ -22,6 +22,7 @@ public abstract class Instruction extends User{
                 case Icmp : return "icmp";
                 case And : return "and";
                 case Or : return "or";
+                case Xor : return "xor";
                 case Call : return "call";
                 case Alloca: return "alloca";
                 case Load : return "load";

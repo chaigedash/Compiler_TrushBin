@@ -1,5 +1,6 @@
 package Parser;
 
+import LLVM.Value;
 import SymbolTable_v2.SymbolTable_v2;
 import SymbolTable_v2.Symbol_v2;
 import Lexer.LexType;
@@ -312,8 +313,12 @@ public class ParserAnalyzer {
             if(words.get(curPos).lexType == LexType.INTTK) {
                 funcFParams = FuncFParams();
             }
+            Value.Type returnType = null;
+            if (functionType == LexType.INTTK) {
+                returnType = Value.Type._i32;
+            }
             if (paramsTable != null) {
-                Symbol_v2 funcSymbol = new Symbol_v2(ident.word, Symbol_v2.Type.function, functionType);
+                Symbol_v2 funcSymbol = new Symbol_v2(ident.word, Symbol_v2.Type.function, returnType);
                 for (Symbol_v2 param : paramsTable.getSymbols()) {
                     funcSymbol.addParam(param);
                 }
@@ -321,7 +326,7 @@ public class ParserAnalyzer {
 //                rootTable.addSymbol(new Symbol(ident.word, Symbol.SymbolKind.func, functionType, layer, paramsTable.getSymbols()));
             }
             else {
-                curSymbolTable.addSymbol(new Symbol_v2(ident.word, Symbol_v2.Type.function, functionType));
+                curSymbolTable.addSymbol(new Symbol_v2(ident.word, Symbol_v2.Type.function, returnType));
 //                rootTable.addSymbol(new Symbol(ident.word, Symbol.SymbolKind.func, functionType, layer));
             }
             RPRENT = getWord(LexType.RPARENT);
@@ -741,429 +746,428 @@ public class ParserAnalyzer {
         Exp exp = Exp();
         return new ForStmt(lVal, ASSIGN, exp);
     }
-    private int InverseExp (Integer expHeadPos, Integer expEndPos) {
-        Integer headPos = expHeadPos;
-        Integer maxPos = expEndPos;
-        if (maxPos == null) {
-            maxPos = words.size() - 1;
-        }
-        // 单目保留
-        while(headPos <= maxPos && (words.get(headPos).lexType == LexType.PLUS || words.get(headPos).lexType == LexType.MINU)) {
-                headPos++;
-        }
-        if (headPos == maxPos) {return maxPos;}
-        // exp逆序
-        Stack<Integer> intervalEndpoints = new Stack<Integer>();
-        int i = 0;
-        for (i = headPos; i <= maxPos; i++) {
-//            System.out.println("接下来上场的是： " + words.get(i).lexType);
-            if (words.get(i).lexType == LexType.INTCON
-                || words.get(i).lexType == LexType.PLUS ||  words.get(i).lexType == LexType.MINU
-                || words.get(i).lexType == LexType.MULT || words.get(i).lexType == LexType.DIV || words.get(i).lexType == LexType.MOD) {
-                continue;
-            }
-            else if (words.get(i).lexType == LexType.LPARENT) {
-                intervalEndpoints.push(i);
-//                Stack<Integer> xiaoxiaole = new Stack<Integer>();
-//                xiaoxiaole.push(i);
-//                i++;
-//                while (xiaoxiaole.size() != 0) {
-////                    System.out.println("接下来上场的是 i : " + words.get(i).lexType);
-//                    if (words.get(i).lexType == LexType.LPARENT) {
-//                        xiaoxiaole.push(i);
-//                    }
-//                    else if (words.get(i).lexType == LexType.RPARENT) {
-//                        int top = xiaoxiaole.pop();
-//                    }
+//    private int InverseExp (Integer expHeadPos, Integer expEndPos) {
+//        Integer headPos = expHeadPos;
+//        Integer maxPos = expEndPos;
+//        if (maxPos == null) {
+//            maxPos = words.size() - 1;
+//        }
+//        // 单目保留
+//        while(headPos <= maxPos && (words.get(headPos).lexType == LexType.PLUS || words.get(headPos).lexType == LexType.MINU)) {
+//                headPos++;
+//        }
+//        if (headPos == maxPos) {return maxPos;}
+//        // exp逆序
+//        Stack<Integer> intervalEndpoints = new Stack<Integer>();
+//        int i = 0;
+//        for (i = headPos; i <= maxPos; i++) {
+////            System.out.println("接下来上场的是： " + words.get(i).lexType);
+//            if (words.get(i).lexType == LexType.INTCON
+//                || words.get(i).lexType == LexType.PLUS ||  words.get(i).lexType == LexType.MINU
+//                || words.get(i).lexType == LexType.MULT || words.get(i).lexType == LexType.DIV || words.get(i).lexType == LexType.MOD) {
+//                continue;
+//            }
+//            else if (words.get(i).lexType == LexType.LPARENT) {
+//                intervalEndpoints.push(i);
+////                Stack<Integer> xiaoxiaole = new Stack<Integer>();
+////                xiaoxiaole.push(i);
+////                i++;
+////                while (xiaoxiaole.size() != 0) {
+//////                    System.out.println("接下来上场的是 i : " + words.get(i).lexType);
+////                    if (words.get(i).lexType == LexType.LPARENT) {
+////                        xiaoxiaole.push(i);
+////                    }
+////                    else if (words.get(i).lexType == LexType.RPARENT) {
+////                        int top = xiaoxiaole.pop();
+////                    }
+////                    i++;
+////                }
+//                i = jumpParents(i);
+//                intervalEndpoints.push(i);
+//                continue;
+//            }
+//            else if (words.get(i).lexType == LexType.IDENFR) {
+//                if (words.get(i + 1).lexType == LexType.LPARENT) {
+//                    intervalEndpoints.push(i); // func_ident
 //                    i++;
+//                    i = jumpParents(i);
+//                    intervalEndpoints.push(i);
+//                    continue;
 //                }
-                i = jumpParents(i);
-                intervalEndpoints.push(i);
-                continue;
-            }
-            else if (words.get(i).lexType == LexType.IDENFR) {
-                if (words.get(i + 1).lexType == LexType.LPARENT) {
-                    intervalEndpoints.push(i); // func_ident
-                    i++;
-                    i = jumpParents(i);
-                    intervalEndpoints.push(i);
-                    continue;
-                }
-                else if (words.get(i + 1).lexType == LexType.LBRACK) {
-                    intervalEndpoints.push(i); // ident
-                    i++;
-                    while (words.get(i).lexType != LexType.RBRACK) {
-                        i++;
-                    }
-                    if (words.get(i + 1).lexType == LexType.LBRACK) { // 二维数组
-                        i++;
-                        while (words.get(i).lexType != LexType.RBRACK) {
-                            i++;
-                        }
-                    }
-                    intervalEndpoints.push(i); // ]
-                }
-                continue;
-            }
-            else {
-                break;
-            }
-        }
-        int rearPos;
-        rearPos = i > maxPos ? maxPos : i - 1;
-        ArrayList<Word> temp = new ArrayList<Word>();
-        int nextPoint = -1;
-        if (intervalEndpoints.size() > 0) {
-            nextPoint = intervalEndpoints.pop();
-        }
-        for (i = rearPos; i >= headPos; i--) {
-            if (i == nextPoint) {
-                int tempHead = intervalEndpoints.pop();
-                for (int j = tempHead; j <= nextPoint; j++) {
-                    temp.add(words.get(j));
-//                    System.out.println(words.get(j).lexType);
-                }
-                i = tempHead;
-                nextPoint = intervalEndpoints.size() > 0 ? intervalEndpoints.pop() : -1;
-            }
-            else {
-                temp.add(words.get(i));
-            }
-        }
-//        System.out.println("---------temp-----------");
-//        for (Word te: temp) {
-//            System.out.print(te.lexType + " ");
-//            if (te.word == null) {
-//                System.out.println(te.number);
+//                else if (words.get(i + 1).lexType == LexType.LBRACK) {
+//                    intervalEndpoints.push(i); // ident
+//                    i++;
+//                    while (words.get(i).lexType != LexType.RBRACK) {
+//                        i++;
+//                    }
+//                    if (words.get(i + 1).lexType == LexType.LBRACK) { // 二维数组
+//                        i++;
+//                        while (words.get(i).lexType != LexType.RBRACK) {
+//                            i++;
+//                        }
+//                    }
+//                    intervalEndpoints.push(i); // ]
+//                }
+//                continue;
 //            }
 //            else {
-//                System.out.println(te.word);
+//                break;
 //            }
 //        }
-        int tempPos;
-//        System.out.println(headPos + " ~ " + rearPos + " ");
-        for (i = headPos, tempPos = 0; i <= rearPos && tempPos < temp.size(); i++, tempPos++) {
-            words.set(i, temp.get(tempPos));
-        }
-
-        return rearPos;
-    }
-    private boolean isInversed (Integer startPos) {
-        for (ExpInterval e : inversedExpIntervals) {
-            if (startPos >= e.startIndex_words && startPos < e.endIndex_words) {
-                return true;
-            }
-        }
-        return false;
-    }
-    private int jumpParents (int i) {
-        int pretendStack = 1; // i = (.index
-        while(pretendStack != 0) {
-            i++;
-            if (i < words.size() && words.get(i).lexType == LexType.LPARENT) {
-                pretendStack++;
-            }
-            else if (i < words.size() && words.get(i).lexType == LexType.RPARENT) {
-                pretendStack--;
-            }
-        }
-        return i; // words.get(i) == )
-    }
-    private int jumpXBRACK (int i) {
-        // i = [.index
-        while(i < words.size() && words.get(i).lexType != LexType.RBRACK) {
-            i++;
-        }
-        //out: i = ].index
-        if (i+1 < words.size() && words.get(i+1).lexType == LexType.LBRACK) {
-            i++;
-            while(i < words.size() && words.get(i).lexType != LexType.RBRACK) {
-                i++;
-            }
-        }
-        return i; // words.get(i) == ]
-    }
-    private void dealParent (int head, int rear) {
-        int maxLayer = 0; // 最大嵌套层数，0-n都能做
-        Stack<Word> countMaxLayerStack = new Stack<Word>();
-        Integer headPos_nextLayer = head, endPos_nextLayer = rear;
-        for (int i = head; i <= rear; i++) {
-            if (words.get(i).lexType == LexType.LPARENT) {
-                if (words.get(i - 1).lexType == LexType.IDENFR) {
-                    i = jumpParents(i);
-                    continue;
-                }
-                countMaxLayerStack.push(words.get(i));
-            }
-            else if (words.get(i).lexType == LexType.RPARENT) {
-                countMaxLayerStack.push(words.get(i));
-            }
-        }
-        ArrayList<Word> array = new ArrayList<Word>();
-        while (countMaxLayerStack.size() != 0) {
-            Word temp = countMaxLayerStack.pop();
-            if (temp.lexType == LexType.RPARENT) {
-
-            }
-//            array.add();
-        }
-        if (maxLayer == 0) {
-            InverseExp(headPos_nextLayer, endPos_nextLayer);
-        }
-        else {
-            for (int i = 1; i <= maxLayer; i++) {
-                int lpCount = 0;
-                int rpCount = 0;
-                for (int j = head; j <= rear; j++) {
-                    if (words.get(j).lexType == LexType.LPARENT) {
-                        if (words.get(j - 1).lexType == LexType.IDENFR) {
-                            j = jumpParents(j);
-                            continue;
-                        }
-                        if (lpCount < i) {
-                            lpCount++;
-                            if (lpCount == i) {
-                                headPos_nextLayer = j + 1;
-//                            System.out.println("第 " + i + " 个左括号");
-//                            System.out.println("lpIndex = " + j);
-                            }
-                        }
-                    }
-                    else if (words.get(j).lexType == LexType.RPARENT && rpCount < maxLayer + 1 - i) {
-                        rpCount++;
-                        if (rpCount == maxLayer + 1 - i) {
-                            endPos_nextLayer = j - 1;
-//                            System.out.println("第 " + (count + 1 - i) + " 个右括号");
-//                            System.out.println("rpIndex = " + j);
-                        }
-                    }
-                    if (lpCount == i && rpCount == maxLayer + 1 - i) {
-//                        System.out.println("[[[[[[[[]]]]]]]]head : " + expHeadPos);
-//                        System.out.println("[[[[[[[[]]]]end : " + expEndPos);
-
-//                        for (int pp = expHeadPos; pp <= expEndPos; pp++) {
-//                            Word te = words.get(pp);
-//                            System.out.print(te.lexType + " ");
-//                            if (te.word == null) {
-//                                System.out.println(te.number);
-//                            }
-//                            else {
-//                                System.out.println(te.word);
+//        int rearPos;
+//        rearPos = i > maxPos ? maxPos : i - 1;
+//        ArrayList<Word> temp = new ArrayList<Word>();
+//        int nextPoint = -1;
+//        if (intervalEndpoints.size() > 0) {
+//            nextPoint = intervalEndpoints.pop();
+//        }
+//        for (i = rearPos; i >= headPos; i--) {
+//            if (i == nextPoint) {
+//                int tempHead = intervalEndpoints.pop();
+//                for (int j = tempHead; j <= nextPoint; j++) {
+//                    temp.add(words.get(j));
+////                    System.out.println(words.get(j).lexType);
+//                }
+//                i = tempHead;
+//                nextPoint = intervalEndpoints.size() > 0 ? intervalEndpoints.pop() : -1;
+//            }
+//            else {
+//                temp.add(words.get(i));
+//            }
+//        }
+////        System.out.println("---------temp-----------");
+////        for (Word te: temp) {
+////            System.out.print(te.lexType + " ");
+////            if (te.word == null) {
+////                System.out.println(te.number);
+////            }
+////            else {
+////                System.out.println(te.word);
+////            }
+////        }
+//        int tempPos;
+////        System.out.println(headPos + " ~ " + rearPos + " ");
+//        for (i = headPos, tempPos = 0; i <= rearPos && tempPos < temp.size(); i++, tempPos++) {
+//            words.set(i, temp.get(tempPos));
+//        }
+//
+//        return rearPos;
+//    }
+//    private boolean isInversed (Integer startPos) {
+//        for (ExpInterval e : inversedExpIntervals) {
+//            if (startPos >= e.startIndex_words && startPos < e.endIndex_words) {
+//                return true;
+//            }
+//        }
+//        return false;
+//    }
+//    private int jumpParents (int i) {
+//        int pretendStack = 1; // i = (.index
+//        while(pretendStack != 0) {
+//            i++;
+//            if (i < words.size() && words.get(i).lexType == LexType.LPARENT) {
+//                pretendStack++;
+//            }
+//            else if (i < words.size() && words.get(i).lexType == LexType.RPARENT) {
+//                pretendStack--;
+//            }
+//        }
+//        return i; // words.get(i) == )
+//    }
+//    private int jumpXBRACK (int i) {
+//        // i = [.index
+//        while(i < words.size() && words.get(i).lexType != LexType.RBRACK) {
+//            i++;
+//        }
+//        //out: i = ].index
+//        if (i+1 < words.size() && words.get(i+1).lexType == LexType.LBRACK) {
+//            i++;
+//            while(i < words.size() && words.get(i).lexType != LexType.RBRACK) {
+//                i++;
+//            }
+//        }
+//        return i; // words.get(i) == ]
+//    }
+//    private void dealParent (int head, int rear) {
+//        int maxLayer = 0; // 最大嵌套层数，0-n都能做
+//        Stack<Word> countMaxLayerStack = new Stack<Word>();
+//        Integer headPos_nextLayer = head, endPos_nextLayer = rear;
+//        for (int i = head; i <= rear; i++) {
+//            if (words.get(i).lexType == LexType.LPARENT) {
+//                if (words.get(i - 1).lexType == LexType.IDENFR) {
+//                    i = jumpParents(i);
+//                    continue;
+//                }
+//                countMaxLayerStack.push(words.get(i));
+//            }
+//            else if (words.get(i).lexType == LexType.RPARENT) {
+//                countMaxLayerStack.push(words.get(i));
+//            }
+//        }
+//        ArrayList<Word> array = new ArrayList<Word>();
+//        while (countMaxLayerStack.size() != 0) {
+//            Word temp = countMaxLayerStack.pop();
+//            if (temp.lexType == LexType.RPARENT) {
+//
+//            }
+////            array.add();
+//        }
+//        if (maxLayer == 0) {
+//            InverseExp(headPos_nextLayer, endPos_nextLayer);
+//        }
+//        else {
+//            for (int i = 1; i <= maxLayer; i++) {
+//                int lpCount = 0;
+//                int rpCount = 0;
+//                for (int j = head; j <= rear; j++) {
+//                    if (words.get(j).lexType == LexType.LPARENT) {
+//                        if (words.get(j - 1).lexType == LexType.IDENFR) {
+//                            j = jumpParents(j);
+//                            continue;
+//                        }
+//                        if (lpCount < i) {
+//                            lpCount++;
+//                            if (lpCount == i) {
+//                                headPos_nextLayer = j + 1;
+////                            System.out.println("第 " + i + " 个左括号");
+////                            System.out.println("lpIndex = " + j);
 //                            }
 //                        }
-                        InverseExp(headPos_nextLayer, endPos_nextLayer);
-                        // 理论上再用到这哥俩，就是下一层次了，那时候应该已经有新生成的pos了，所以置空吧
-                        headPos_nextLayer = null;
-                        endPos_nextLayer = null;
-//                        System.out.println("-----------------------------------------------------then------------------------------------------------------");
-//                                                for (int pp = curPos; pp <= rear; pp++) {
-//                                                    Word te = words.get(pp);
-//                                                    System.out.print(te.lexType + " ");
-//                                                    if (te.word == null) {
-//                                                        System.out.println(te.number);
-//                                                    }
-//                                                    else {
-//                                                        System.out.println(te.word);
-//                                                    }
-//                                                }
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    private void dealManyParent (int headPos, int endPos) {
-        Integer head_parent, end_parent;
-        for (int f = headPos; f <= endPos; f++) {
-            if (f < words.size() && words.get(f).lexType == LexType.LPARENT) {
-                if (words.get(f - 1).lexType == LexType.IDENFR) {
-                    f = jumpParents(f);
-                    continue;
-                }
-                head_parent = f + 1; // ( + 1
-                f = jumpParents(f);
-                end_parent = f - 1; // ) - 1
-                dealParent(head_parent, end_parent);
-            }
-        }
-    }
-    private void dealOneLayerFunc(int head, int rear) {
-        // head: funcIdent.index + 2 // (.index + 1
-        // rear: ).index - 1
-        Stack<Integer> posStack = new Stack<Integer>(); // 参数index
-        posStack.push(head);
-        for (int i = head; i <= rear; i++) {
-            if (i < words.size() && words.get(i).lexType == LexType.IDENFR) {
-                if (words.get(i + 1).lexType == LexType.LBRACK) {
-                    i++;
-                    i = jumpXBRACK(i);
-                    continue;
-                }
-                else if (words.get(i + 1).lexType == LexType.LPARENT) {
-                    i++;
-                    i = jumpParents(i);
-                    continue;
-                }
-            }
-            if (i < words.size() && words.get(i).lexType == LexType.COMMA) {
-                posStack.push(i - 1); // , - 1
-                posStack.push(i + 1); // , + 1
-            }
-        }
-        posStack.push(rear);
-        for (int i = 0; posStack.size() > 0; i++) {
-            int endPos = posStack.pop();
-            int headPos = posStack.pop();
-            if (headPos == endPos) continue;
-            dealManyParent(headPos, endPos);
-        }
-    }
-    private void dealFuncRParams(int head, int rear) { // TODO：函数嵌套。。。忽略数组下标问题
-        // head: funcIdent.index + 2 // (.index + 1
-        // rear: ).index - 1
-        Integer headPos_nextLayer = head, endPos_nextLayer = rear;
-        Stack<Integer> posStack = new Stack<Integer>(); // 参数index
-        posStack.push(head);
-        for (int i = head; i <= rear; i++) {
-            if (i < words.size() && words.get(i).lexType == LexType.IDENFR) {
-                if (words.get(i + 1).lexType == LexType.LBRACK) {
-                    i++;
-                    i = jumpXBRACK(i);
-                    continue;
-                }
-            }
-            if (i < words.size() && words.get(i).lexType == LexType.COMMA) {
-                posStack.push(i - 1); // , - 1
-                posStack.push(i + 1); // , + 1
-            }
-        }
-        posStack.push(rear);
-        for (int i = 0; posStack.size() > 0; i++) {
-            int endPos_param = posStack.pop();
-            int headPos_param = posStack.pop();
-            if (headPos_param == endPos_param) {
-                continue;
-            }
-            int maxLayer = 1;
-            Stack<Word> countMaxLayerStack = new Stack<Word>();
-            for (int j = headPos_param; j <= endPos_param; j++) {
-                if (words.get(j).lexType == LexType.IDENFR && words.get(j + 1).lexType == LexType.LPARENT) {
-                    countMaxLayerStack.push(words.get(j));
-                    j++;
-                }
-                if (words.get(j).lexType == LexType.LPARENT) {
-                    countMaxLayerStack.push(words.get(j));
-                }
-                else if (words.get(j).lexType == LexType.RPARENT) {
-                    Word temp = countMaxLayerStack.pop();
-                    if(temp.lexType != LexType.LPARENT) {
-                        countMaxLayerStack.push(temp);
-                    }
-                }
-            }
-            ArrayList<Word> array = new ArrayList<Word>();
-            while (countMaxLayerStack.size() != 0) {
-                array.add(countMaxLayerStack.pop());
-            }
-            for (int q = 0; q < array.size(); q++) {
-                if (array.get(q).lexType == LexType.IDENFR) {
-                    if (q+1 < array.size() && array.get(q+1).lexType == LexType.LPARENT){
-                        maxLayer++;
-                        q++;
-                    }
-                }
-                if (array.get(q).lexType == LexType.LPARENT) {
-                    while(array.get(q).lexType == LexType.LPARENT) {
-                        q++;
-                    }
-                    q--;
-                }
-            }
-            for (int k = maxLayer; k >= 1; k--) { // 从最内层开始处理，因为单层处理忽略内层的函数
-                for (int j = headPos_param; j <= endPos_param; j++) {
-                    int count = 0;
-                    if (words.get(j).lexType == LexType.IDENFR) {
-                        if (words.get(j + 1).lexType == LexType.LBRACK) {
-                            j++;
-                            j = jumpXBRACK(j);
-                        }
-                        else if (words.get(j + 1).lexType == LexType.LPARENT && count < k) {
-                            count++;
-                        }
-                    }
-                    if (count == k) {
-                        headPos_nextLayer = j + 2; // fun (.index + 1
-                        endPos_nextLayer = jumpParents(j) - 1; // ).index - 1
-                        dealOneLayerFunc(headPos_nextLayer, endPos_nextLayer);
-                        break;
-                    }
-                }
-            }
-            dealParent(headPos_param, endPos_param);
-        }
-    }
-    private void dealArray(Integer headPos, Integer rear) {
-        //TODO: 没写呢
-        for (int i = headPos; i <= rear; i++) {
-            if (i < words.size() && words.get(i).lexType == LexType.IDENFR) {
-                i++;
-                if (i < words.size() && words.get(i).lexType == LexType.LBRACK) {
-                    i = jumpXBRACK(i);
-                }
-            }
-        }
-    }
-    private void shitExp(){
-        int rear = 0;
-        if (isInversed(curPos)) {
-        }
-        else {
-            ExpNeedInverse = false;
-            rear = InverseExp(curPos, null); // 简单倒置，主要为了获取rear
-            if (curPos == rear){
-                // 单项表达式直接开摆
-            }
-            else {
-                inversedExpIntervals.add(new ExpInterval(curPos, rear));
-                dealManyParent(curPos, rear);
-                int head, end;
-                for (int i = curPos; i < rear; i++) {
-                    if (words.get(i).lexType == LexType.IDENFR && words.get(i+1).lexType == LexType.LPARENT) {
-                        head = i + 2;
-                        i++;
-                        i = jumpParents(i);
-                        end = i - 1;
-//                        System.out.println("=--------------=");
-//                        for (int pp = head; pp <= end; pp++) {
-//                            Word te = words.get(pp);
-//                            System.out.print(te.lexType + " ");
-//                            if (te.word == null) {
-//                                System.out.println(te.number);
-//                            } else {
-//                                System.out.println(te.word);
-//                            }
+//                    }
+//                    else if (words.get(j).lexType == LexType.RPARENT && rpCount < maxLayer + 1 - i) {
+//                        rpCount++;
+//                        if (rpCount == maxLayer + 1 - i) {
+//                            endPos_nextLayer = j - 1;
+////                            System.out.println("第 " + (count + 1 - i) + " 个右括号");
+////                            System.out.println("rpIndex = " + j);
 //                        }
-                        dealFuncRParams(head, end);
-//                        System.out.println("then----------");
-//                        for (int pp = head; pp <= end; pp++) {
-//                            Word te = words.get(pp);
-//                            System.out.print(te.lexType + " ");
-//                            if (te.word == null) {
-//                                System.out.println(te.number);
-//                            } else {
-//                                System.out.println(te.word);
-//                            }
+//                    }
+//                    if (lpCount == i && rpCount == maxLayer + 1 - i) {
+////                        System.out.println("[[[[[[[[]]]]]]]]head : " + expHeadPos);
+////                        System.out.println("[[[[[[[[]]]]end : " + expEndPos);
+//
+////                        for (int pp = expHeadPos; pp <= expEndPos; pp++) {
+////                            Word te = words.get(pp);
+////                            System.out.print(te.lexType + " ");
+////                            if (te.word == null) {
+////                                System.out.println(te.number);
+////                            }
+////                            else {
+////                                System.out.println(te.word);
+////                            }
+////                        }
+//                        InverseExp(headPos_nextLayer, endPos_nextLayer);
+//                        // 理论上再用到这哥俩，就是下一层次了，那时候应该已经有新生成的pos了，所以置空吧
+//                        headPos_nextLayer = null;
+//                        endPos_nextLayer = null;
+////                        System.out.println("-----------------------------------------------------then------------------------------------------------------");
+////                                                for (int pp = curPos; pp <= rear; pp++) {
+////                                                    Word te = words.get(pp);
+////                                                    System.out.print(te.lexType + " ");
+////                                                    if (te.word == null) {
+////                                                        System.out.println(te.number);
+////                                                    }
+////                                                    else {
+////                                                        System.out.println(te.word);
+////                                                    }
+////                                                }
+//                        break;
+//                    }
+//                }
+//            }
+//        }
+//    }
+//    private void dealManyParent (int headPos, int endPos) {
+//        Integer head_parent, end_parent;
+//        for (int f = headPos; f <= endPos; f++) {
+//            if (f < words.size() && words.get(f).lexType == LexType.LPARENT) {
+//                if (words.get(f - 1).lexType == LexType.IDENFR) {
+//                    f = jumpParents(f);
+//                    continue;
+//                }
+//                head_parent = f + 1; // ( + 1
+//                f = jumpParents(f);
+//                end_parent = f - 1; // ) - 1
+//                dealParent(head_parent, end_parent);
+//            }
+//        }
+//    }
+//    private void dealOneLayerFunc(int head, int rear) {
+//        // head: funcIdent.index + 2 // (.index + 1
+//        // rear: ).index - 1
+//        Stack<Integer> posStack = new Stack<Integer>(); // 参数index
+//        posStack.push(head);
+//        for (int i = head; i <= rear; i++) {
+//            if (i < words.size() && words.get(i).lexType == LexType.IDENFR) {
+//                if (words.get(i + 1).lexType == LexType.LBRACK) {
+//                    i++;
+//                    i = jumpXBRACK(i);
+//                    continue;
+//                }
+//                else if (words.get(i + 1).lexType == LexType.LPARENT) {
+//                    i++;
+//                    i = jumpParents(i);
+//                    continue;
+//                }
+//            }
+//            if (i < words.size() && words.get(i).lexType == LexType.COMMA) {
+//                posStack.push(i - 1); // , - 1
+//                posStack.push(i + 1); // , + 1
+//            }
+//        }
+//        posStack.push(rear);
+//        for (int i = 0; posStack.size() > 0; i++) {
+//            int endPos = posStack.pop();
+//            int headPos = posStack.pop();
+//            if (headPos == endPos) continue;
+//            dealManyParent(headPos, endPos);
+//        }
+//    }
+//    private void dealFuncRParams(int head, int rear) {
+//        // head: funcIdent.index + 2 // (.index + 1
+//        // rear: ).index - 1
+//        Integer headPos_nextLayer = head, endPos_nextLayer = rear;
+//        Stack<Integer> posStack = new Stack<Integer>(); // 参数index
+//        posStack.push(head);
+//        for (int i = head; i <= rear; i++) {
+//            if (i < words.size() && words.get(i).lexType == LexType.IDENFR) {
+//                if (words.get(i + 1).lexType == LexType.LBRACK) {
+//                    i++;
+//                    i = jumpXBRACK(i);
+//                    continue;
+//                }
+//            }
+//            if (i < words.size() && words.get(i).lexType == LexType.COMMA) {
+//                posStack.push(i - 1); // , - 1
+//                posStack.push(i + 1); // , + 1
+//            }
+//        }
+//        posStack.push(rear);
+//        for (int i = 0; posStack.size() > 0; i++) {
+//            int endPos_param = posStack.pop();
+//            int headPos_param = posStack.pop();
+//            if (headPos_param == endPos_param) {
+//                continue;
+//            }
+//            int maxLayer = 1;
+//            Stack<Word> countMaxLayerStack = new Stack<Word>();
+//            for (int j = headPos_param; j <= endPos_param; j++) {
+//                if (words.get(j).lexType == LexType.IDENFR && words.get(j + 1).lexType == LexType.LPARENT) {
+//                    countMaxLayerStack.push(words.get(j));
+//                    j++;
+//                }
+//                if (words.get(j).lexType == LexType.LPARENT) {
+//                    countMaxLayerStack.push(words.get(j));
+//                }
+//                else if (words.get(j).lexType == LexType.RPARENT) {
+//                    Word temp = countMaxLayerStack.pop();
+//                    if(temp.lexType != LexType.LPARENT) {
+//                        countMaxLayerStack.push(temp);
+//                    }
+//                }
+//            }
+//            ArrayList<Word> array = new ArrayList<Word>();
+//            while (countMaxLayerStack.size() != 0) {
+//                array.add(countMaxLayerStack.pop());
+//            }
+//            for (int q = 0; q < array.size(); q++) {
+//                if (array.get(q).lexType == LexType.IDENFR) {
+//                    if (q+1 < array.size() && array.get(q+1).lexType == LexType.LPARENT){
+//                        maxLayer++;
+//                        q++;
+//                    }
+//                }
+//                if (array.get(q).lexType == LexType.LPARENT) {
+//                    while(array.get(q).lexType == LexType.LPARENT) {
+//                        q++;
+//                    }
+//                    q--;
+//                }
+//            }
+//            for (int k = maxLayer; k >= 1; k--) { // 从最内层开始处理，因为单层处理忽略内层的函数
+//                for (int j = headPos_param; j <= endPos_param; j++) {
+//                    int count = 0;
+//                    if (words.get(j).lexType == LexType.IDENFR) {
+//                        if (words.get(j + 1).lexType == LexType.LBRACK) {
+//                            j++;
+//                            j = jumpXBRACK(j);
 //                        }
-                    }
-                }
-//                dealArray(curPos, rear);
-            }
-            int triger = 0;
-//            triger++;
-            if (triger > 0) {
-            }
-        }
-    }
+//                        else if (words.get(j + 1).lexType == LexType.LPARENT && count < k) {
+//                            count++;
+//                        }
+//                    }
+//                    if (count == k) {
+//                        headPos_nextLayer = j + 2; // fun (.index + 1
+//                        endPos_nextLayer = jumpParents(j) - 1; // ).index - 1
+//                        dealOneLayerFunc(headPos_nextLayer, endPos_nextLayer);
+//                        break;
+//                    }
+//                }
+//            }
+//            dealParent(headPos_param, endPos_param);
+//        }
+//    }
+//    private void dealArray(Integer headPos, Integer rear) {
+//        for (int i = headPos; i <= rear; i++) {
+//            if (i < words.size() && words.get(i).lexType == LexType.IDENFR) {
+//                i++;
+//                if (i < words.size() && words.get(i).lexType == LexType.LBRACK) {
+//                    i = jumpXBRACK(i);
+//                }
+//            }
+//        }
+//    }
+//    private void shitExp(){
+//        int rear = 0;
+//        if (isInversed(curPos)) {
+//        }
+//        else {
+//            ExpNeedInverse = false;
+//            rear = InverseExp(curPos, null); // 简单倒置，主要为了获取rear
+//            if (curPos == rear){
+//                // 单项表达式直接开摆
+//            }
+//            else {
+//                inversedExpIntervals.add(new ExpInterval(curPos, rear));
+//                dealManyParent(curPos, rear);
+//                int head, end;
+//                for (int i = curPos; i < rear; i++) {
+//                    if (words.get(i).lexType == LexType.IDENFR && words.get(i+1).lexType == LexType.LPARENT) {
+//                        head = i + 2;
+//                        i++;
+//                        i = jumpParents(i);
+//                        end = i - 1;
+////                        System.out.println("=--------------=");
+////                        for (int pp = head; pp <= end; pp++) {
+////                            Word te = words.get(pp);
+////                            System.out.print(te.lexType + " ");
+////                            if (te.word == null) {
+////                                System.out.println(te.number);
+////                            } else {
+////                                System.out.println(te.word);
+////                            }
+////                        }
+//                        dealFuncRParams(head, end);
+////                        System.out.println("then----------");
+////                        for (int pp = head; pp <= end; pp++) {
+////                            Word te = words.get(pp);
+////                            System.out.print(te.lexType + " ");
+////                            if (te.word == null) {
+////                                System.out.println(te.number);
+////                            } else {
+////                                System.out.println(te.word);
+////                            }
+////                        }
+//                    }
+//                }
+////                dealArray(curPos, rear);
+//            }
+//            int triger = 0;
+////            triger++;
+//            if (triger > 0) {
+//            }
+//        }
+//    }
     private Exp Exp () {
         AddExp addExp = AddExp();
         return new Exp(addExp);
