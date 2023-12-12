@@ -9,7 +9,7 @@ import Utils.IO;
 import java.util.ArrayList;
 
 public class CallInstruction extends Instruction{
-//    <result> = call [ret attrs] <ty> <fnptrval>(<function args>)
+    //    <result> = call [ret attrs] <ty> <fnptrval>(<function args>)
     private Value result;
     private Function function;
     private ArrayList<Value> params = new ArrayList<Value>();

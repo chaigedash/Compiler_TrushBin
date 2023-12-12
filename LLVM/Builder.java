@@ -84,6 +84,12 @@ public class Builder {
         basicBlock.addInstruct(br);
         return br;
     }
+    public void buildBitCastInstruction (BasicBlock basicBlock, Pointer resPtr, Integer oriD1, Integer oriD2, Integer aimCol, Pointer srcPtr) {
+        // 有参数，有返回
+        basicBlock.addInstruct(
+                new BitCastInstruction(basicBlock, resPtr, oriD1, oriD2, aimCol, srcPtr)
+        );
+    }
     public void buildCallInstruction (BasicBlock basicBlock, Value result, Function function, ArrayList<Value> params) {
         // 有参数，有返回
         basicBlock.addInstruct(

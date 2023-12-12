@@ -10,7 +10,7 @@ public abstract class Instruction extends User{
         Zext, Trunc,
         Alloca, Load, Store, GetElementPtr, Icmp,
         Phi, MemPhi, LoadDep,
-        Br, Call, Ret,
+        Br, Call, Ret, BitCast,
         Not;
         public String toString () {
             switch (this) {
@@ -33,6 +33,7 @@ public abstract class Instruction extends User{
                 case Trunc : return "trunc";
                 case Br : return "br";
                 case Ret : return "ret";
+                case BitCast : return "bitcast";
 //                case Not : return "not";
 //                case Mod : return "mod";
 //                case Lt : return "lt";
